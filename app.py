@@ -10,17 +10,42 @@ st.set_page_config(page_title="FC Online Rank Simulation", layout="wide")
 import json
 import os
 
-# --- Configuration Persistence ---
-CONFIG_FILE = "sim_config.json"
+# --- Configuration Persistence (Google Sheets) ---
+from streamlit_gsheets import GSheetsConnection
 
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            st.error(f"Failed to load config: {e}")
-    return {}
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Read the first worksheet. We assume it contains the JSON config in cell A1 or similar structure.
+        # Actually, let's store it as a simple 2-column dataframe: [Key, Value] to be flexible, 
+        # or just one cell with JSON string if we want to keep it simple.
+        # Let's try reading as a DataFrame.
+        df = conn.read()
+        
+        # Check if empty
+        if df.empty:
+            return {}
+            
+        # Strategy: We will store the entire JSON config string in the first cell (A1) of the sheet.
+        # This avoids schema issues with complex nested JSONs in columns.
+        # The dataframe read might interpret it as a header.
+        # Let's assume we store: Header "ConfigJSON", Row 1: "{...}"
+        
+        if "ConfigJSON" in df.columns and len(df) > 0:
+            json_str = df.iloc[0]["ConfigJSON"]
+            return json.loads(json_str)
+            
+        return {}
+    except Exception as e:
+        # Fallback to local if secrets not found or connection fails (e.g. first run)
+        # st.warning(f"Google Sheets Load Failed: {e}. Using local defaults.")
+        if os.path.exists(CONFIG_FILE):
+             try:
+                with open(CONFIG_FILE, "r") as f:
+                    return json.load(f)
+             except:
+                 pass
+        return {}
 
 def save_config():
     config = {
@@ -65,15 +90,29 @@ def save_config():
         # User Comments
         "user_comments": st.session_state.get("user_comments", "")
     }
+    
+    # Save to Google Sheets
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f, indent=4)
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        json_str = json.dumps(config)
+        # Create a DataFrame with one cell
+        df_to_save = pd.DataFrame([{"ConfigJSON": json_str}])
+        conn.update(data=df_to_save)
+        # st.toast("Config saved to Google Sheets!")
     except Exception as e:
-        st.error(f"Failed to save config: {e}")
+        # st.error(f"Failed to save to Google Sheets: {e}")
+        # Fallback to local
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
+        except:
+            pass
 
 # Load Config at Startup
 if 'config_loaded' not in st.session_state:
-    loaded_config = load_config()
+    with st.spinner("Loading config from database..."):
+        loaded_config = load_config()
+        
     if loaded_config:
         # Apply to session state for widgets
         for k, v in loaded_config.items():
