@@ -106,7 +106,11 @@ def save_config():
 
 # --- Authentication ---
 # --- Authentication & Session Management ---
-cookie_manager = stx.CookieManager()
+@st.cache_resource
+def get_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_manager()
 
 def check_password(username, password):
     try:
@@ -172,18 +176,19 @@ def login_page():
         if submit:
             if check_password(username, password):
                 st.session_state["authenticated"] = True
-                # Set cookies for persistence (expire in 1 day, but logic handles 30 min inactivity)
+                # Set cookies for persistence (expire in 1 day)
+                # We only set auth_user here. last_activity will be updated in the main loop.
+                # This avoids calling cookie_manager.set twice in one run (which causes DuplicateKey error).
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
                 cookie_manager.set("auth_user", username, expires_at=expires_at)
-                cookie_manager.set("last_activity", str(time.time()), expires_at=expires_at)
                 st.rerun()
             else:
                 st.error("아이디 또는 비밀번호가 잘못되었습니다.")
 
 def logout():
     st.session_state["authenticated"] = False
+    # Only delete auth_user. last_activity becomes irrelevant without auth_user.
     cookie_manager.delete("auth_user")
-    cookie_manager.delete("last_activity")
     st.rerun()
 
 # --- Main Execution Flow ---
