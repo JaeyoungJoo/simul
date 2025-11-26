@@ -4,43 +4,35 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig, MatchConfig
+import json
+import os
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="FC Online Rank Simulation", layout="wide")
 
-import json
-import os
-
-# --- Configuration Persistence (Google Sheets) ---
-from streamlit_gsheets import GSheetsConnection
-
+# --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
 
 def load_config():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # Read the first worksheet. We assume it contains the JSON config in cell A1 or similar structure.
-        # Actually, let's store it as a simple 2-column dataframe: [Key, Value] to be flexible, 
-        # or just one cell with JSON string if we want to keep it simple.
-        # Let's try reading as a DataFrame.
-        df = conn.read()
+        df = conn.read(worksheet="Config") # Explicitly read 'Config' worksheet if possible, or default
         
-        # Check if empty
         if df.empty:
             return {}
             
-        # Strategy: We will store the entire JSON config string in the first cell (A1) of the sheet.
-        # This avoids schema issues with complex nested JSONs in columns.
-        # The dataframe read might interpret it as a header.
-        # Let's assume we store: Header "ConfigJSON", Row 1: "{...}"
-        
+        # Expecting ConfigJSON in the first cell/column
         if "ConfigJSON" in df.columns and len(df) > 0:
             json_str = df.iloc[0]["ConfigJSON"]
             return json.loads(json_str)
-            
+        # Fallback: try reading first cell if column name doesn't match
+        if len(df) > 0 and len(df.columns) > 0:
+             # This is a bit risky without strict schema, but let's try
+             pass
+             
         return {}
     except Exception as e:
-        # Fallback to local if secrets not found or connection fails (e.g. first run)
-        # st.warning(f"Google Sheets Load Failed: {e}. Using local defaults.")
+        # Fallback to local
         if os.path.exists(CONFIG_FILE):
              try:
                 with open(CONFIG_FILE, "r") as f:
@@ -97,204 +89,338 @@ def save_config():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         json_str = json.dumps(config)
-        # Create a DataFrame with one cell
         df_to_save = pd.DataFrame([{"ConfigJSON": json_str}])
-        conn.update(data=df_to_save)
-        # st.toast("Config saved to Google Sheets!")
+        conn.update(data=df_to_save) # Updates the default/first sheet
     except Exception as e:
-        # st.error(f"Failed to save to Google Sheets: {e}")
         # Fallback to local
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f, indent=4)
         except:
             pass
-    
 
-
-# --- Season Management (Soft Reset) ---
-if 'sim_result' in st.session_state:
-    st.sidebar.markdown("---")
-    st.sidebar.header("Season Management")
-    
-    current_season = st.session_state.get('season_count', 1)
-    st.sidebar.info(f"Current Season: {current_season}")
-    
-    with st.sidebar.expander("Soft Reset Settings (Tiered)", expanded=False):
-        st.caption("Define reset rules for different MMR ranges. Rules are applied in order.")
+# --- Authentication ---
+def check_password(username, password):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Assuming 'Users' worksheet exists. If not, this might fail.
+        # If it fails, we might want a fallback or just return False.
+        try:
+            df = conn.read(worksheet="Users")
+        except:
+            # If Users sheet doesn't exist, maybe allow default admin?
+            # For now, strict fail.
+            return False
         
-        if 'reset_rules' not in st.session_state:
-            st.session_state.reset_rules = pd.DataFrame([
-                {"Min MMR": 0, "Max MMR": 10000, "Target MMR": 1000, "Compression": 0.5}
-            ])
+        if df.empty:
+            return False
             
-        column_config_rules = {
-            "Min MMR": st.column_config.NumberColumn("Min MMR", required=True),
-            "Max MMR": st.column_config.NumberColumn("Max MMR", required=True),
-            "Target MMR": st.column_config.NumberColumn("Target MMR", required=True),
-            "Compression": st.column_config.NumberColumn("Compression (0-1)", min_value=0.0, max_value=1.0, format="%.2f")
-        }
+        # Simple plain text comparison
+        # Ensure columns exist
+        if 'username' not in df.columns or 'password' not in df.columns:
+            return False
+
+        user_row = df[df['username'] == username]
         
-        edited_rules = st.sidebar.data_editor(
-            st.session_state.reset_rules,
-            num_rows="dynamic",
-            column_config=column_config_rules,
-            use_container_width=True,
-            hide_index=True
-        )
-        st.session_state.reset_rules = edited_rules
+        if not user_row.empty:
+            stored_password = str(user_row.iloc[0]['password'])
+            if stored_password == password:
+                return True
+        return False
+    except Exception as e:
+        st.error(f"Login Error: {e}")
+        return False
+
+def login_page():
+    st.title("Login")
+    st.info("Please log in to access the simulation.")
+    
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
         
-    if st.sidebar.button("End Season & Soft Reset"):
-        sim = st.session_state.sim_result
-        
-        # Convert DF to list of dicts
-        rules = []
-        for _, row in edited_rules.iterrows():
-            rules.append({
-                'min': float(row['Min MMR']),
-                'max': float(row['Max MMR']),
-                'target': float(row['Target MMR']),
-                'compression': float(row['Compression'])
-            })
+        if submit:
+            if check_password(username, password):
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
+
+def logout():
+    st.session_state["authenticated"] = False
+    st.rerun()
+
+# --- Main Execution Flow ---
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    login_page()
+else:
+    # Sidebar Logout
+    with st.sidebar:
+        st.write(f"Logged in.")
+        if st.button("Logout"):
+            logout()
+        st.divider()
+
+    # --- Existing App Logic (Restored) ---
+    
+    # Load Config at Startup
+    if 'config_loaded' not in st.session_state:
+        with st.spinner("Loading config from database..."):
+            loaded_config = load_config()
             
-        sim.apply_tiered_reset(rules)
+        if loaded_config:
+            # Apply to session state for widgets
+            for k, v in loaded_config.items():
+                if k == 'segments':
+                    try:
+                        st.session_state.segments = [SegmentConfig(**s) for s in v]
+                    except TypeError:
+                        st.warning("Config schema mismatch for segments. Using defaults.")
+                        st.session_state.segments = [] 
+                elif k == 'reset_rules':
+                    st.session_state.reset_rules = pd.DataFrame(v)
+                elif k == 'streak_rules':
+                    st.session_state.streak_rules = pd.DataFrame(v)
+                elif k == 'goal_diff_rules':
+                    st.session_state.goal_diff_rules = pd.DataFrame(v)
+                else:
+                    st.session_state[k] = v
+            if "user_comments" in loaded_config:
+                st.session_state.user_comments = loaded_config["user_comments"]
+                
+        st.session_state.config_loaded = True
+
+    # Initialize Session State (Defaults)
+    if 'segments' not in st.session_state:
+        st.session_state.segments = [
+            SegmentConfig("Super Champions", 0.0003, 0.95, 10, 30, 4.0, 5.0, 18, 2),
+            SegmentConfig("Champions", 0.0027, 0.85, 5, 15, 3.0, 4.0, 18, 2),
+            SegmentConfig("World Class", 0.15, 0.60, 3, 10, 1.0, 3.0, 19, 1),
+            SegmentConfig("Professional", 0.30, 0.40, 2, 5, -1.0, 1.0, 19, 1),
+            SegmentConfig("Semi-Pro", 0.35, 0.20, 1, 3, -3.0, -1.0, 20, 0),
+            SegmentConfig("Amateur", 0.197, 0.10, 0, 2, -5.0, -3.0, 20, 0)
+        ]
+
+    if 'simulation' not in st.session_state:
+        st.session_state.simulation = None
+
+    # --- Sidebar Configuration ---
+    with st.sidebar:
+        st.header("Simulation Settings")
         
-        st.session_state.season_count += 1
-        st.session_state.stats_history = [] 
-        
-        save_config() # Save after reset
-        st.success(f"Season {current_season} Ended. Tiered Soft Reset Applied!")
-        st.rerun()
+        with st.expander("Global Settings", expanded=True):
+            st.session_state.num_users = st.number_input("Number of Users", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="Total number of users in the simulation.")
+            st.session_state.num_days = st.number_input("Simulation Days", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="Duration of the simulation in days.")
+            st.session_state.initial_mmr = st.number_input("Initial MMR", value=st.session_state.get("initial_mmr", 1000.0), help="Starting MMR for all users.")
 
-# Auto-save config at the end of script execution if values changed
-# We can just call save_config() here. It's lightweight.
-save_config()
+        with st.expander("Match Configuration"):
+            st.session_state.draw_prob = st.slider("Draw Probability (Regular Time)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1), help="Probability of a match ending in a draw after regular time.")
+            st.session_state.prob_et = st.slider("Extra Time Probability (given Draw)", 0.0, 1.0, st.session_state.get("prob_et", 0.2), help="Probability of going to extra time if the match is a draw.")
+            st.session_state.prob_pk = st.slider("Penalty Shootout Probability (given ET)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5), help="Probability of going to penalties if extra time is also a draw.")
+            st.session_state.max_goal_diff = st.slider("Max Goal Difference", 1, 10, st.session_state.get("max_goal_diff", 5), help="Maximum possible goal difference in a match.")
+            st.session_state.matchmaking_jitter = st.number_input("Matchmaking Jitter (MMR)", value=st.session_state.get("matchmaking_jitter", 50.0), help="Randomness added to matchmaking to simulate imperfect pairing.")
 
-# --- Comments Section ---
-st.sidebar.markdown("---")
-st.sidebar.header("Memo / Comments")
-user_comments = st.sidebar.text_area("Leave your notes here:", value=st.session_state.get("user_comments", ""), height=150, help="시뮬레이션 설정이나 결과에 대한 메모를 남길 수 있습니다. (자동 저장)")
-if user_comments != st.session_state.get("user_comments", ""):
-    st.session_state.user_comments = user_comments
-    save_config()
+        with st.expander("ELO System Config"):
+            st.session_state.base_k = st.number_input("Base K-Factor", value=st.session_state.get("base_k", 32), help="Standard K-factor for ELO calculations.")
+            
+            st.subheader("Placement Matches")
+            st.session_state.placement_matches = st.number_input("Number of Placement Matches", value=st.session_state.get("placement_matches", 10), help="Number of initial matches with boosted K-factor.")
+            st.session_state.placement_bonus = st.number_input("Placement K-Factor Bonus Multiplier", value=st.session_state.get("placement_bonus", 4.0), help="Multiplier for K-factor during placement matches.")
+            
+            st.subheader("Streak Multipliers")
+            if 'streak_rules' not in st.session_state:
+                st.session_state.streak_rules = pd.DataFrame([
+                    {"min_streak": 3, "bonus": 5.0},
+                    {"min_streak": 5, "bonus": 10.0}
+                ])
+            st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
+            
+            st.subheader("Goal Difference Multipliers")
+            if 'goal_diff_rules' not in st.session_state:
+                st.session_state.goal_diff_rules = pd.DataFrame([
+                    {"min_diff": 2, "bonus": 2.0},
+                    {"min_diff": 4, "bonus": 5.0}
+                ])
+            st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
+            
+            st.subheader("Win Type Decay")
+            st.session_state.decay_et = st.slider("Extra Time Win Decay", 0.0, 1.0, st.session_state.get("decay_et", 0.8), help="Multiplier for ELO gain when winning in extra time.")
+            st.session_state.decay_pk = st.slider("Penalty Win Decay", 0.0, 1.0, st.session_state.get("decay_pk", 0.6), help="Multiplier for ELO gain when winning in penalties.")
 
-# --- Results Display ---
-if 'sim_result' in st.session_state:
-    sim = st.session_state.sim_result
-    stats_history = st.session_state.stats_history
-    is_fast_mode = isinstance(sim, FastSimulation)
-    
-    st.header("Simulation Results")
-    
-    tab1, tab2, tab3 = st.tabs(["Overview", "Segment Analysis", "Match Inspector"])
-    
+            st.subheader("MMR Compression Correction (Calibration)")
+            st.session_state.calibration_enabled = st.checkbox("Enable Calibration Mode", value=st.session_state.get("calibration_enabled", False), help="If enabled, applies a K-factor bonus when MMR is compressed.")
+            if st.session_state.calibration_enabled:
+                st.session_state.calibration_k_bonus = st.number_input("Calibration K-Bonus Multiplier", value=st.session_state.get("calibration_k_bonus", 2.0), help="Multiplier for K-factor during calibration.")
+                st.session_state.calibration_match_count = st.number_input("Calibration Match Count", value=st.session_state.get("calibration_match_count", 10), help="Number of matches to apply calibration bonus.")
+
+        with st.expander("User Segments"):
+            st.write("Define user segments and their properties.")
+            segment_data = []
+            for s in st.session_state.segments:
+                segment_data.append({
+                    "name": s.name,
+                    "ratio": s.ratio,
+                    "daily_play_prob": s.daily_play_prob,
+                    "matches_per_day_min": s.matches_per_day_min,
+                    "matches_per_day_max": s.matches_per_day_max,
+                    "true_skill_min": s.true_skill_min,
+                    "true_skill_max": s.true_skill_max,
+                    "active_hour_start": s.active_hour_start,
+                    "active_hour_end": s.active_hour_end
+                })
+            edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor", help="Table to configure user segments.")
+            
+            new_segments = []
+            total_ratio = 0
+            for index, row in edited_segments.iterrows():
+                try:
+                    s = SegmentConfig(
+                        row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
+                        int(row["matches_per_day_min"]), int(row["matches_per_day_max"]),
+                        float(row["true_skill_min"]), float(row["true_skill_max"]),
+                        int(row["active_hour_start"]), int(row["active_hour_end"])
+                    )
+                    new_segments.append(s)
+                    total_ratio += s.ratio
+                except:
+                    pass
+            st.session_state.segments = new_segments
+            st.write(f"Total Ratio: {total_ratio:.4f}")
+
+        with st.expander("Reset Rules (Season End)"):
+            if 'reset_rules' not in st.session_state:
+                st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
+            st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
+
+        if st.button("Save Configuration"):
+            save_config()
+            st.success("Configuration saved!")
+
+    # --- Main Content ---
+    st.title("Rank Simulation Dashboard")
+
+    tab1, tab2, tab3 = st.tabs(["Run Simulation", "Analysis", "Match Inspector"])
+
     with tab1:
-        st.subheader("MMR Trends")
-        st.subheader("MMR Trends")
-        if stats_history:
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.subheader("Control Panel")
+            if st.button("Start Simulation", type="primary"):
+                with st.spinner("Initializing Simulation..."):
+                    elo_config = ELOConfig(
+                        base_k=st.session_state.base_k,
+                        placement_matches=st.session_state.placement_matches,
+                        placement_bonus=st.session_state.placement_bonus,
+                        streak_rules=st.session_state.streak_rules.to_dict('records'),
+                        goal_diff_rules=st.session_state.goal_diff_rules.to_dict('records'),
+                        decay_et=st.session_state.decay_et,
+                        decay_pk=st.session_state.decay_pk,
+                        calibration_k_bonus=st.session_state.calibration_k_bonus,
+                        calibration_enabled=st.session_state.calibration_enabled,
+                        calibration_match_count=st.session_state.calibration_match_count
+                    )
+                    match_config = MatchConfig(
+                        draw_prob=st.session_state.draw_prob,
+                        prob_et=st.session_state.prob_et,
+                        prob_pk=st.session_state.prob_pk,
+                        max_goal_diff=st.session_state.max_goal_diff,
+                        matchmaking_jitter=st.session_state.matchmaking_jitter
+                    )
+                    st.session_state.simulation = FastSimulation(
+                        num_users=st.session_state.num_users,
+                        num_days=st.session_state.num_days,
+                        segments=st.session_state.segments,
+                        elo_config=elo_config,
+                        match_config=match_config,
+                        initial_mmr=st.session_state.initial_mmr
+                    )
+                    
+                # Run Simulation
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                sim = st.session_state.simulation
+                
+                stats_history = []
+                for day in range(st.session_state.num_days):
+                    sim.run_day(day)
+                    # Collect daily stats for plotting
+                    # FastSimulation might not store history per user, so we aggregate
+                    mmrs = sim.mmr
+                    stats_history.append({
+                        "day": day + 1,
+                        "avg_mmr": np.mean(mmrs),
+                        "min_mmr": np.min(mmrs),
+                        "max_mmr": np.max(mmrs)
+                    })
+                    
+                    progress = (day + 1) / st.session_state.num_days
+                    progress_bar.progress(progress)
+                    status_text.text(f"Simulating Day {day+1}/{st.session_state.num_days}...")
+                
+                status_text.text("Simulation Complete!")
+                st.session_state.stats_history = stats_history
+                st.success("Simulation finished successfully.")
+
+        with col2:
+            st.subheader("Real-time Stats (Last Day)")
+            if st.session_state.simulation:
+                sim = st.session_state.simulation
+                total_matches = np.sum(sim.matches_played)
+                avg_mmr = np.mean(sim.mmr)
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total Matches", f"{total_matches:,}")
+                m2.metric("Average MMR", f"{avg_mmr:.2f}")
+                m3.metric("Active Users", f"{sim.num_users:,}")
+                
+                fig = px.histogram(x=sim.mmr, nbins=50, title="Final MMR Distribution", labels={'x': 'MMR', 'y': 'Count'})
+                st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        st.subheader("Simulation Analysis")
+        if st.session_state.simulation and 'stats_history' in st.session_state:
+            stats_history = st.session_state.stats_history
+            
+            # MMR Trends
             df_stats = pd.DataFrame(stats_history)
             fig_trends = go.Figure()
             fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['avg_mmr'], name='Average MMR'))
             fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['min_mmr'], name='Min MMR'))
             fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['max_mmr'], name='Max MMR'))
             st.plotly_chart(fig_trends, use_container_width=True)
-        else:
-            st.info("No match history for this season yet. Run simulation to generate data.")
-        
-        st.subheader("Final MMR Distribution")
-        if is_fast_mode:
-            final_mmrs = sim.mmr
-        else:
-            final_mmrs = [u.current_mmr for u in sim.users]
-        fig_dist = px.histogram(final_mmrs, nbins=50, title="MMR Distribution", labels={'value': 'MMR'})
-        st.plotly_chart(fig_dist, use_container_width=True)
-
-    with tab2:
-        st.subheader("Segment Performance")
-        if is_fast_mode:
-            # Stratified Sampling to ensure all segments are represented
-            sample_size = min(10000, sim.num_users)
-            if sample_size < sim.num_users:
-                indices = np.random.choice(sim.num_users, sample_size, replace=False)
-            else:
-                indices = np.arange(sim.num_users)
-                
-            segment_data = {
-                "Segment": [sim.seg_names[sim.segment_indices[i]] for i in indices],
-                "MMR": sim.mmr[indices],
-                "True Skill": sim.true_skill[indices],
-                "Matches": sim.matches_played[indices],
-                "Win Rate": sim.wins[indices] / (sim.matches_played[indices] + 1e-9)
-            }
-            df_users = pd.DataFrame(segment_data)
-        else:
-            segment_data = []
-            for u in sim.users:
-                segment_data.append({
-                    "ID": u.id,
-                    "Segment": u.segment_name,
-                    "MMR": u.current_mmr,
-                    "True Skill": u.true_skill,
-                    "Matches": u.matches_played,
-                    "Win Rate": u.win_rate
-                })
-            df_users = pd.DataFrame(segment_data)
             
-        # Segment Filter
-        all_segments = sorted(df_users["Segment"].unique())
-        selected_segments = st.multiselect("Filter Segments", all_segments, default=all_segments)
-        
-        if selected_segments:
-            df_users = df_users[df_users["Segment"].isin(selected_segments)]
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            fig_box = px.box(df_users, x="Segment", y="MMR", title="MMR Distribution by Segment")
-            st.plotly_chart(fig_box, use_container_width=True)
-        with col2:
-            fig_scatter = px.scatter(df_users, x="True Skill", y="MMR", color="Segment", title="True Skill vs MMR", opacity=0.5)
-            fig_scatter.add_shape(type="line", line=dict(dash="dash", color="gray"), x0=0, x1=2500, y0=0, y1=2500)
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            # Tier Distribution
+            st.markdown("### Tier Distribution")
+            tiers = [
+                ("Bronze", 0, 1200), ("Silver", 1200, 1400), ("Gold", 1400, 1600),
+                ("Platinum", 1600, 1800), ("Diamond", 1800, 2000), ("Master", 2000, 2400), ("Challenger", 2400, 5000)
+            ]
+            sim = st.session_state.simulation
+            tier_counts = {name: 0 for name, _, _ in tiers}
+            for mmr in sim.mmr:
+                for name, low, high in tiers:
+                    if low <= mmr < high:
+                        tier_counts[name] += 1
+                        break
             
-        if not is_fast_mode:
-            st.dataframe(df_users)
+            tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
+            fig_tier = px.bar(tier_df, x="Tier", y="Count", title="User Count by Tier")
+            st.plotly_chart(fig_tier, use_container_width=True)
+            
+        else:
+            st.info("Run the simulation first to see analysis.")
 
     with tab3:
-        match_logic_help = """
-승/무/패 결정 로직 설명
-
-시뮬레이션 내부(_process_matches)에서 승패는 다음과 같은 확률적 절차로 결정.
-
-1. 승률 계산 (True Skill 기반)
-두 유저의 True Skill(실제 실력) 차이를 기반으로 A가 이길 확률(prob_a_win)을 계산
-공식: 1 / (1 + 10^((Skill_B - Skill_A) / 400))
-실력이 같으면 50%, A가 400점 높으면 약 91%
-
-2. 무승부 판정 (정규 시간)
-먼저 0~1 사이의 난수(rand)를 생성.
-설정된 **무승부 확률(draw_prob, 예: 10%)**보다 난수가 작으면 일단 **무승부(Draw)**로 간주.
-rand < 0.1 -> 무승부 상황 진입
-
-3. 승패 판정 (정규 시간)
-무승부가 아니라면, 남은 확률(90%)을 prob_a_win 비율로 나눠 갖음.
-Win Threshold = 0.1 + (0.9 * prob_a_win)
-rand < Win Threshold -> A 승리
-그 외 -> A 패배 (B 승리)
-
-4. 연장전 및 승부차기 (옵션)
-무승부 상황에서 추가 난수를 굴려 연장전(prob_extra_time) 여부를 결정.
-연장전에서도 승부가 안 나면 **승부차기(prob_pk)**로 넘어감.
-승부차기는 실력 차이 없이 50:50 운으로 결정.
-
-요약: 기본적으로 실력 차이가 승률을 지배하지만, 무승부 변수와 **운(Randomness)**이 개입하여 이변을 만들어냄.
-"""
-        st.subheader("User Match Inspector", help=match_logic_help)
-        
-        if is_fast_mode:
+        st.subheader("Match Inspector")
+        if st.session_state.simulation:
+            sim = st.session_state.simulation
+            # Fast Mode Logic
             st.info("Fast Mode Active: Viewing Sampled Users per Segment")
-            
-            # Create a mapping for dropdown that handles duplicate names
-            # Format: "SegmentName (ID: 123)"
             dropdown_options = {}
             for idx, name in sim.watched_indices.items():
                 label = f"{name} (ID: {idx})"
@@ -304,7 +430,6 @@ rand < Win Threshold -> A 승리
             
             if selected_label:
                 target_idx = dropdown_options[selected_label]
-                # Extract name from label or look it up
                 selected_segment = sim.watched_indices[target_idx]
                 
                 st.write(f"**Sample User ID: {target_idx} ({selected_segment})**")
@@ -319,7 +444,6 @@ rand < Win Threshold -> A 승리
                             "Day": log.day,
                             "Opponent ID": log.opponent_id,
                             "Opponent MMR": f"{log.opponent_mmr:.1f}",
-                            "Opponent Skill": f"{log.opponent_true_skill:.1f}",
                             "Result": f"{log.result} ({log.result_type})",
                             "Goal Diff": log.goal_diff,
                             "Change": f"{log.mmr_change:+.1f}",
@@ -329,30 +453,13 @@ rand < Win Threshold -> A 승리
                 else:
                     st.info("No matches played yet.")
         else:
-            user_id_input = st.number_input("Enter User ID to View Logs", min_value=0, max_value=num_users-1, value=0, step=1)
-            target_user = next((u for u in sim.users if u.id == user_id_input), None)
-            
-            if target_user:
-                st.write(f"**User {target_user.id} ({target_user.segment_name})**")
-                st.write(f"Current MMR: {target_user.current_mmr:.2f} | True Skill: {target_user.true_skill:.2f}")
-                st.write(f"Record: {target_user.wins}W - {target_user.draws}D - {target_user.losses}L (Win Rate: {target_user.win_rate:.2%})")
-                
-                if target_user.match_history:
-                    log_data = []
-                    for log in target_user.match_history:
-                        log_data.append({
-                            "Day": log.day,
-                            "Hour": log.hour,
-                            "Opponent ID": log.opponent_id,
-                            "Opponent MMR": f"{log.opponent_mmr:.1f}",
-                            "Opponent Skill": f"{log.opponent_true_skill:.1f}",
-                            "Result": f"{log.result} ({log.result_type})",
-                            "Goal Diff": log.goal_diff,
-                            "Change": f"{log.mmr_change:+.1f}",
-                            "New MMR": f"{log.current_mmr:.1f}"
-                        })
-                    st.dataframe(pd.DataFrame(log_data))
-                else:
-                    st.info("No matches played yet.")
-            else:
-                st.error("User not found.")
+            st.info("Run the simulation first to inspect matches.")
+
+    # --- Comments Section ---
+    st.divider()
+    st.subheader("User Comments / Feedback")
+    comments = st.text_area("Leave your feedback here:", value=st.session_state.get("user_comments", ""), height=100)
+    if st.button("Save Comments"):
+        st.session_state.user_comments = comments
+        save_config()
+        st.success("Comments saved!")
