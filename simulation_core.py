@@ -440,6 +440,69 @@ class FastSimulation:
         
         self.watched_indices = {}
         self.match_logs = {}
+        
+    def initialize_users(self):
+        current_idx = 0
+        total_ratio = sum(s.ratio if not isinstance(s, dict) else s['ratio'] for s in self.segment_configs)
+        
+        for i, config in enumerate(self.segment_configs):
+            # Handle both object and dict (defensive programming)
+            if isinstance(config, dict):
+                ratio = config['ratio']
+                true_skill_min = config['true_skill_min']
+                true_skill_max = config['true_skill_max']
+                daily_play_prob = config['daily_play_prob']
+                matches_per_day_min = config['matches_per_day_min']
+                matches_per_day_max = config['matches_per_day_max']
+                name = config['name']
+            else:
+                ratio = config.ratio
+                true_skill_min = config.true_skill_min
+                true_skill_max = config.true_skill_max
+                daily_play_prob = config.daily_play_prob
+                matches_per_day_min = config.matches_per_day_min
+                matches_per_day_max = config.matches_per_day_max
+                name = config.name
+
+            count = int(self.num_users * (ratio / total_ratio))
+            if current_idx + count > self.num_users:
+                count = self.num_users - current_idx
+            
+            skills = np.random.uniform(true_skill_min, true_skill_max, count)
+            self.true_skill[current_idx:current_idx+count] = skills
+            self.segment_indices[current_idx:current_idx+count] = i
+            
+            self.seg_daily_prob.append(daily_play_prob)
+            self.seg_matches_min.append(matches_per_day_min)
+            self.seg_matches_max.append(matches_per_day_max)
+            self.seg_names.append(name)
+            
+            if count > 0:
+                # Select user closest to the mean True Skill for this segment (approx center of uniform)
+                segment_skills = self.true_skill[current_idx:current_idx+count]
+                target_skill = (true_skill_min + true_skill_max) / 2
+                closest_offset = np.abs(segment_skills - target_skill).argmin()
+                sample_idx = current_idx + closest_offset
+                
+                self.watched_indices[sample_idx] = name
+                self.match_logs[sample_idx] = []
+                
+            current_idx += count
+            
+        if current_idx < self.num_users:
+            # Handle default/fallback for remaining users
+            config = self.segment_configs[0]
+            if isinstance(config, dict):
+                 ts_mean = (config['true_skill_min'] + config['true_skill_max']) / 2
+            else:
+                 ts_mean = (config.true_skill_min + config.true_skill_max) / 2
+                 
+            self.true_skill[current_idx:] = ts_mean
+            self.segment_indices[current_idx:] = 0
+            
+        self.seg_daily_prob = np.array(self.seg_daily_prob)
+        self.seg_matches_min = np.array(self.seg_matches_min)
+        self.seg_matches_max = np.array(self.seg_matches_max)
 
     def run_day(self):
         self.day += 1
