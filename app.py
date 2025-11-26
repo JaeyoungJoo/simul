@@ -525,6 +525,37 @@ else:
                 st.session_state.stats_history = stats_history
                 st.success("시뮬레이션이 성공적으로 종료되었습니다.")
 
+            if st.session_state.simulation is not None:
+                st.divider()
+                st.subheader("시즌 관리")
+                if st.button("시즌 초기화 (Soft Reset)"):
+                    if st.session_state.reset_rules.empty:
+                        st.warning("시즌 초기화 규칙이 설정되지 않았습니다.")
+                    else:
+                        try:
+                            rules_df = st.session_state.reset_rules.sort_values("min_mmr")
+                            rules = []
+                            for i in range(len(rules_df)):
+                                row = rules_df.iloc[i]
+                                min_val = float(row["min_mmr"])
+                                if i < len(rules_df) - 1:
+                                    max_val = float(rules_df.iloc[i+1]["min_mmr"])
+                                else:
+                                    max_val = float('inf')
+                                
+                                rules.append({
+                                    "min": min_val,
+                                    "max": max_val,
+                                    "target": float(row["reset_mmr"]),
+                                    "compression": float(row["soft_reset_ratio"])
+                                })
+                            
+                            st.session_state.simulation.apply_tiered_reset(rules)
+                            st.success("시즌 초기화가 완료되었습니다. (MMR 압축 및 전적 초기화)")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"초기화 중 오류 발생: {e}")
+
         with col2:
             st.subheader("실시간 통계 (마지막 날)")
             if st.session_state.simulation:
