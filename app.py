@@ -284,7 +284,7 @@ else:
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
                 
             try:
-                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
+                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor")
             except Exception as e:
                 st.error(f"Error displaying streak rules: {e}")
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
@@ -304,7 +304,7 @@ else:
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
                 
             try:
-                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
+                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor")
             except Exception as e:
                 st.error(f"Error displaying goal diff rules: {e}")
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
@@ -336,7 +336,7 @@ else:
                 })
             
             try:
-                edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor", help="Table to configure user segments.")
+                edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor")
             except Exception as e:
                 st.error(f"Error displaying segments: {e}")
                 edited_segments = pd.DataFrame() # Fallback
