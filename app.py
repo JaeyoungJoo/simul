@@ -496,10 +496,11 @@ else:
                     )
                     
                     match_config = MatchConfig(
-                        basic_draw_prob=st.session_state.basic_draw_prob,
-                        min_draw_prob=st.session_state.min_draw_prob,
-                        max_draw_prob=st.session_state.max_draw_prob,
-                        home_advantage=st.session_state.home_advantage
+                        draw_prob=st.session_state.draw_prob,
+                        prob_extra_time=st.session_state.prob_et,
+                        prob_pk=st.session_state.prob_pk,
+                        max_goal_diff=st.session_state.max_goal_diff,
+                        matchmaking_jitter=st.session_state.matchmaking_jitter
                     )
                     
                     # Initialize or Update Simulation
