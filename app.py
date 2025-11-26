@@ -580,6 +580,41 @@ else:
                 st.success("시뮬레이션이 성공적으로 종료되었습니다.")
 
         with col2:
+            st.subheader("시즌 관리")
+            if st.session_state.simulation is not None:
+                if st.button("시즌 초기화 (Soft Reset)"):
+                    try:
+                        # Ensure numeric types for sorting and processing
+                        rules_df = st.session_state.reset_rules.copy()
+                        cols_to_numeric = ["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"]
+                        for col in cols_to_numeric:
+                            rules_df[col] = pd.to_numeric(rules_df[col], errors='coerce')
+                        
+                        # Drop rows with invalid numbers if any
+                        rules_df = rules_df.dropna(subset=cols_to_numeric)
+                        
+                        # Sort by min_mmr just in case
+                        rules_df = rules_df.sort_values("min_mmr")
+                        
+                        rules = []
+                        for index, row in rules_df.iterrows():
+                            rules.append({
+                                "min": float(row["min_mmr"]),
+                                "max": float(row["max_mmr"]),
+                                "target": float(row["reset_mmr"]),
+                                "compression": float(row["soft_reset_ratio"])
+                            })
+                        
+                        st.session_state.simulation.apply_tiered_reset(rules)
+                            
+                        st.success("시즌 초기화가 완료되었습니다. (MMR 압축 및 전적 초기화)")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"초기화 중 오류 발생: {e}")
+            else:
+                st.info("시뮬레이션을 먼저 실행하세요.")
+
+            st.divider()
             st.subheader("실시간 통계 (마지막 날)")
             if st.session_state.simulation:
                 sim = st.session_state.simulation
