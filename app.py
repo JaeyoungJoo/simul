@@ -103,29 +103,51 @@ def save_config():
 def check_password(username, password):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # Assuming 'Users' worksheet exists. If not, this might fail.
-        # If it fails, we might want a fallback or just return False.
+        # Use ttl=0 to ensure we get the latest data, avoiding cache issues
         try:
-            df = conn.read(worksheet="Users")
-        except:
-            # If Users sheet doesn't exist, maybe allow default admin?
-            # For now, strict fail.
+            df = conn.read(worksheet="Users", ttl=0)
+        except Exception as read_err:
+            st.error(f"Failed to read 'Users' worksheet: {read_err}")
             return False
         
         if df.empty:
+            st.error("Debug: Users sheet is empty.")
             return False
             
-        # Simple plain text comparison
-        # Ensure columns exist
+        # Normalize columns: strip whitespace and lowercase
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        # Debug: Show columns found
+        # st.write(f"Debug: Found columns: {df.columns.tolist()}")
+        
         if 'username' not in df.columns or 'password' not in df.columns:
+            st.error(f"Debug: Missing 'username' or 'password' columns. Found: {df.columns.tolist()}")
             return False
 
-        user_row = df[df['username'] == username]
+        # Normalize data for comparison
+        # Convert username column to string, strip whitespace
+        df['username'] = df['username'].astype(str).str.strip()
+        
+        # Find user
+        user_row = df[df['username'] == username.strip()]
         
         if not user_row.empty:
-            stored_password = str(user_row.iloc[0]['password'])
-            if stored_password == password:
+            # Handle password: convert to string, remove potential '.0' if it was read as float
+            stored_password = str(user_row.iloc[0]['password']).strip()
+            if stored_password.endswith('.0'):
+                stored_password = stored_password[:-2]
+                
+            if stored_password == password.strip():
                 return True
+            else:
+                # Debug: Password mismatch
+                # st.warning(f"Debug: Password mismatch for {username}. Stored: '{stored_password}', Input: '{password}'")
+                pass
+        else:
+             # Debug: User not found
+             # st.warning(f"Debug: User '{username}' not found in sheet.")
+             pass
+             
         return False
     except Exception as e:
         st.error(f"Login Error: {e}")
