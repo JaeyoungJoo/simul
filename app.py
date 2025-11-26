@@ -447,20 +447,38 @@ else:
 
         with st.expander("시즌 초기화 규칙 (Season End)"):
             if 'reset_rules' not in st.session_state:
-                st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
-            # Defensive check
+                st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
+            
+            # Defensive check & Schema Migration
             if not isinstance(st.session_state.reset_rules, pd.DataFrame):
                 st.session_state.reset_rules = pd.DataFrame(st.session_state.reset_rules)
             
-            # Ensure columns exist if empty
-            if st.session_state.reset_rules.empty and len(st.session_state.reset_rules.columns) == 0:
-                 st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
+            # Check if we need to migrate columns (e.g. if tier_name exists or max_mmr missing)
+            current_cols = set(st.session_state.reset_rules.columns)
+            required_cols = {"min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"}
+            
+            if not required_cols.issubset(current_cols):
+                 # Reset to new schema if columns don't match
+                 st.session_state.reset_rules = pd.DataFrame([
+                     {"min_mmr": 0, "max_mmr": 9999, "reset_mmr": 1000, "soft_reset_ratio": 0.0}
+                 ])
                  
             try:
-                st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
+                st.session_state.reset_rules = st.data_editor(
+                    st.session_state.reset_rules, 
+                    num_rows="dynamic", 
+                    use_container_width=True, 
+                    key="reset_editor",
+                    column_config={
+                        "min_mmr": st.column_config.NumberColumn("최소 MMR", required=True, step=10),
+                        "max_mmr": st.column_config.NumberColumn("최대 MMR", required=True, step=10),
+                        "reset_mmr": st.column_config.NumberColumn("초기화 목표 MMR", required=True, step=10),
+                        "soft_reset_ratio": st.column_config.NumberColumn("압축 비율 (0=완전초기화)", required=True, min_value=0.0, max_value=1.0, step=0.1, help="0이면 목표 MMR로 완전 초기화, 1이면 현재 MMR 유지. 0.5면 중간값.")
+                    }
+                )
             except Exception as e:
                 st.error(f"초기화 규칙 표시 오류: {e}")
-                st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
+                st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
 
         if st.button("설정 저장"):
             save_config()
