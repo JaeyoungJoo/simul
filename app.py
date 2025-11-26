@@ -336,7 +336,15 @@ else:
                 })
             
             try:
-                edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor")
+                # Ensure numeric columns are float to allow decimal input in editor
+                df_segments = pd.DataFrame(segment_data)
+                if not df_segments.empty:
+                    cols_to_float = ["matches_per_day_min", "matches_per_day_max", "true_skill_min", "true_skill_max", "daily_play_prob", "ratio"]
+                    for col in cols_to_float:
+                        if col in df_segments.columns:
+                            df_segments[col] = df_segments[col].astype(float)
+                            
+                edited_segments = st.data_editor(df_segments, num_rows="dynamic", use_container_width=True, key="segment_editor")
             except Exception as e:
                 st.error(f"Error displaying segments: {e}")
                 edited_segments = pd.DataFrame() # Fallback
@@ -348,7 +356,7 @@ else:
                     try:
                         s = SegmentConfig(
                             row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
-                            int(row["matches_per_day_min"]), int(row["matches_per_day_max"]),
+                            float(row["matches_per_day_min"]), float(row["matches_per_day_max"]),
                             float(row["true_skill_min"]), float(row["true_skill_max"]),
                             int(row["active_hour_start"]), int(row["active_hour_end"])
                         )
