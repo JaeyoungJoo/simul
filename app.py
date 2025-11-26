@@ -533,7 +533,17 @@ else:
                         st.warning("시즌 초기화 규칙이 설정되지 않았습니다.")
                     else:
                         try:
-                            rules_df = st.session_state.reset_rules.sort_values("min_mmr")
+                            # Ensure numeric types for sorting and processing
+                            rules_df = st.session_state.reset_rules.copy()
+                            cols_to_numeric = ["min_mmr", "reset_mmr", "soft_reset_ratio"]
+                            for col in cols_to_numeric:
+                                rules_df[col] = pd.to_numeric(rules_df[col], errors='coerce')
+                            
+                            # Drop rows with invalid numbers if any
+                            rules_df = rules_df.dropna(subset=cols_to_numeric)
+                            
+                            rules_df = rules_df.sort_values("min_mmr")
+                            
                             rules = []
                             for i in range(len(rules_df)):
                                 row = rules_df.iloc[i]
