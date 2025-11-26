@@ -237,6 +237,11 @@ else:
     with st.sidebar:
         st.header("Simulation Settings")
         
+        if st.button("⚠️ Reset Config (Emergency)", help="Click this if you see errors. It will reset all settings to default."):
+            st.session_state.clear()
+            st.rerun()
+        st.divider()
+        
         with st.expander("Global Settings", expanded=True):
             st.session_state.num_users = st.number_input("Number of Users", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="Total number of users in the simulation.")
             st.session_state.num_days = st.number_input("Simulation Days", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="Duration of the simulation in days.")
@@ -360,11 +365,6 @@ else:
         if st.button("Save Configuration"):
             save_config()
             st.success("Configuration saved!")
-            
-        st.divider()
-        if st.button("⚠️ Reset Config (Emergency)", help="Click this if you see errors. It will reset all settings to default."):
-            st.session_state.clear()
-            st.rerun()
 
     # --- Main Content ---
     st.title("Rank Simulation Dashboard")
