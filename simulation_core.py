@@ -442,6 +442,12 @@ class FastSimulation:
         self.match_logs = {}
         
     def initialize_users(self):
+        # Reset segment tracking lists to ensure they are lists (not numpy arrays from previous runs)
+        self.seg_daily_prob = []
+        self.seg_matches_min = []
+        self.seg_matches_max = []
+        self.seg_names = []
+
         current_idx = 0
         total_ratio = sum(s.ratio if not isinstance(s, dict) else s['ratio'] for s in self.segment_configs)
         
