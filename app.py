@@ -270,7 +270,11 @@ else:
             if st.session_state.streak_rules.empty and len(st.session_state.streak_rules.columns) == 0:
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
                 
-            st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
+            try:
+                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
+            except Exception as e:
+                st.error(f"Error displaying streak rules: {e}")
+                st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
             
             st.subheader("Goal Difference Multipliers")
             if 'goal_diff_rules' not in st.session_state:
@@ -286,7 +290,11 @@ else:
             if st.session_state.goal_diff_rules.empty and len(st.session_state.goal_diff_rules.columns) == 0:
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
                 
-            st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
+            try:
+                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
+            except Exception as e:
+                st.error(f"Error displaying goal diff rules: {e}")
+                st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
             
             st.subheader("Win Type Decay")
             st.session_state.decay_et = st.slider("Extra Time Win Decay", 0.0, 1.0, st.session_state.get("decay_et", 0.8), help="Multiplier for ELO gain when winning in extra time.")
@@ -343,7 +351,11 @@ else:
             if st.session_state.reset_rules.empty and len(st.session_state.reset_rules.columns) == 0:
                  st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
                  
-            st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
+            try:
+                st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
+            except Exception as e:
+                st.error(f"Error displaying reset rules: {e}")
+                st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
 
         if st.button("Save Configuration"):
             save_config()
