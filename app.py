@@ -397,19 +397,20 @@ else:
             st.subheader("제어판")
             if st.button("시뮬레이션 시작", type="primary"):
                 with st.spinner("시뮬레이션 초기화 중..."):
+                    win_type_decay = {'Regular': 1.0, 'Extra': st.session_state.decay_et, 'PK': st.session_state.decay_pk}
                     elo_config = ELOConfig(
                         base_k=st.session_state.base_k,
                         placement_matches=st.session_state.placement_matches,
                         placement_bonus=st.session_state.placement_bonus,
                         streak_rules=st.session_state.streak_rules.to_dict('records'),
                         goal_diff_rules=st.session_state.goal_diff_rules.to_dict('records'),
-                        decay_et=st.session_state.decay_et,
-                        decay_pk=st.session_state.decay_pk,
-                        calibration_k_bonus=st.session_state.calibration_k_bonus
+                        win_type_decay=win_type_decay,
+                        uncertainty_factor=0.9, # Default
+                        calibration_k_bonus=st.session_state.calibration_k_bonus,
+                        calibration_enabled=st.session_state.calibration_enabled,
+                        calibration_match_count=st.session_state.calibration_match_count
                     )
-                    # Set new attributes explicitly to avoid TypeError if class definition is stale
-                    elo_config.calibration_enabled = st.session_state.calibration_enabled
-                    elo_config.calibration_match_count = st.session_state.calibration_match_count
+                    # match_config instantiation follows...
                     match_config = MatchConfig(
                         draw_prob=st.session_state.draw_prob,
                         prob_et=st.session_state.prob_et,
