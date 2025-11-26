@@ -16,7 +16,7 @@ CONFIG_FILE = "sim_config.json"
 def load_config():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Config") # Explicitly read 'Config' worksheet if possible, or default
+        df = conn.read(worksheet="Config", ttl=0) # Explicitly read 'Config' worksheet with no cache
         
         if df.empty:
             return {}
@@ -90,7 +90,7 @@ def save_config():
         conn = st.connection("gsheets", type=GSheetsConnection)
         json_str = json.dumps(config)
         df_to_save = pd.DataFrame([{"ConfigJSON": json_str}])
-        conn.update(data=df_to_save) # Updates the default/first sheet
+        conn.update(worksheet="Config", data=df_to_save) # Explicitly update 'Config' worksheet
     except Exception as e:
         # Fallback to local
         try:
