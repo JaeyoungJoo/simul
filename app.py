@@ -13,6 +13,8 @@ import os
 # --- Configuration Persistence (Google Sheets) ---
 from streamlit_gsheets import GSheetsConnection
 
+CONFIG_FILE = "sim_config.json"
+
 def load_config():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
