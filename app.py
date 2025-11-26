@@ -103,12 +103,18 @@ def save_config():
 def check_password(username, password):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # Use ttl=0 to ensure we get the latest data, avoiding cache issues
+        
+        # Try to read 'Users' worksheet
+        df = pd.DataFrame()
         try:
             df = conn.read(worksheet="Users", ttl=0)
-        except Exception as read_err:
-            st.error(f"Failed to read 'Users' worksheet: {read_err}")
-            return False
+        except Exception:
+            # Fallback: Try lowercase 'users'
+            try:
+                df = conn.read(worksheet="users", ttl=0)
+            except Exception as e:
+                st.error(f"Error: Could not find a worksheet named 'Users' or 'users'. Please check the tab name in your Google Sheet. (Details: {e})")
+                return False
         
         if df.empty:
             st.error("Debug: Users sheet is empty.")
@@ -116,9 +122,6 @@ def check_password(username, password):
             
         # Normalize columns: strip whitespace and lowercase
         df.columns = [str(c).strip().lower() for c in df.columns]
-        
-        # Debug: Show columns found
-        # st.write(f"Debug: Found columns: {df.columns.tolist()}")
         
         if 'username' not in df.columns or 'password' not in df.columns:
             st.error(f"Debug: Missing 'username' or 'password' columns. Found: {df.columns.tolist()}")
