@@ -485,14 +485,11 @@ else:
                     
                     elo_config = ELOConfig(
                         base_k=st.session_state.base_k,
-                        max_k=st.session_state.max_k,
                         placement_matches=st.session_state.placement_matches,
-                        placement_k_factor=st.session_state.placement_k_factor,
-                        streak_bonus=st.session_state.streak_bonus,
-                        streak_threshold=st.session_state.streak_threshold,
-                        gd_bonus_weight=st.session_state.gd_bonus_weight,
+                        placement_bonus=st.session_state.placement_bonus,
+                        streak_rules=st.session_state.streak_rules.to_dict('records') if isinstance(st.session_state.streak_rules, pd.DataFrame) else st.session_state.streak_rules,
+                        goal_diff_rules=st.session_state.goal_diff_rules.to_dict('records') if isinstance(st.session_state.goal_diff_rules, pd.DataFrame) else st.session_state.goal_diff_rules,
                         win_type_decay=win_type_decay,
-                        mmr_compression_correction=st.session_state.mmr_compression_correction,
                         calibration_enabled=st.session_state.get("calibration_enabled", False),
                         calibration_k_bonus=st.session_state.get("calibration_k_bonus", 2.0),
                         calibration_match_count=st.session_state.get("calibration_match_count", 10)
