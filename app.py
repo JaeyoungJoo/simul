@@ -471,36 +471,52 @@ else:
         with col1:
             st.subheader("제어판")
             st.checkbox("보정 모드 활성화 (Calibration)", key="calibration_enabled", help="MMR 압축 현상을 완화하기 위한 보정 모드를 활성화합니다.")
+            hard_reset = st.checkbox("시즌 1부터 시작 (초기화)", value=True, help="체크 시 모든 데이터를 초기화하고 1일차부터 시작합니다. 해제 시 현재 상태를 유지하며 이어서 진행합니다.")
+            
             if st.button("시뮬레이션 시작", type="primary"):
-                with st.spinner("시뮬레이션 초기화 중..."):
+                with st.spinner("시뮬레이션 준비 중..."):
                     win_type_decay = {'Regular': 1.0, 'Extra': st.session_state.decay_et, 'PK': st.session_state.decay_pk}
+                    
                     elo_config = ELOConfig(
                         base_k=st.session_state.base_k,
+                        max_k=st.session_state.max_k,
                         placement_matches=st.session_state.placement_matches,
-                        placement_bonus=st.session_state.placement_bonus,
-                        streak_rules=st.session_state.streak_rules.to_dict('records'),
-                        goal_diff_rules=st.session_state.goal_diff_rules.to_dict('records'),
+                        placement_k_factor=st.session_state.placement_k_factor,
+                        streak_bonus=st.session_state.streak_bonus,
+                        streak_threshold=st.session_state.streak_threshold,
+                        gd_bonus_weight=st.session_state.gd_bonus_weight,
                         win_type_decay=win_type_decay,
-                        uncertainty_factor=0.9, # Default
-                        calibration_k_bonus=st.session_state.calibration_k_bonus,
-                        calibration_enabled=st.session_state.calibration_enabled,
-                        calibration_match_count=st.session_state.calibration_match_count
+                        mmr_compression_correction=st.session_state.mmr_compression_correction,
+                        calibration_enabled=st.session_state.get("calibration_enabled", False),
+                        calibration_k_bonus=st.session_state.get("calibration_k_bonus", 2.0),
+                        calibration_match_count=st.session_state.get("calibration_match_count", 10)
                     )
-                    # match_config instantiation follows...
+                    
                     match_config = MatchConfig(
-                        draw_prob=st.session_state.draw_prob,
-                        prob_extra_time=st.session_state.prob_et,
-                        prob_pk=st.session_state.prob_pk,
-                        max_goal_diff=st.session_state.max_goal_diff,
-                        matchmaking_jitter=st.session_state.matchmaking_jitter
+                        basic_draw_prob=st.session_state.basic_draw_prob,
+                        min_draw_prob=st.session_state.min_draw_prob,
+                        max_draw_prob=st.session_state.max_draw_prob,
+                        home_advantage=st.session_state.home_advantage
                     )
-                    st.session_state.simulation = FastSimulation(
-                        num_users=st.session_state.num_users,
-                        segment_configs=st.session_state.segments,
-                        elo_config=elo_config,
-                        match_config=match_config,
-                        initial_mmr=st.session_state.initial_mmr
-                    )
+                    
+                    # Initialize or Update Simulation
+                    if hard_reset or st.session_state.simulation is None:
+                        st.session_state.simulation = FastSimulation(
+                            num_users=st.session_state.num_users,
+                            segment_configs=st.session_state.segments,
+                            elo_config=elo_config,
+                            match_config=match_config,
+                            initial_mmr=st.session_state.initial_mmr
+                        )
+                        st.session_state.stats_history = []
+                        st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")
+                    else:
+                        # Update existing simulation configs
+                        st.session_state.simulation.elo_config = elo_config
+                        st.session_state.simulation.match_config = match_config
+                        st.session_state.simulation.segment_configs = st.session_state.segments
+                        st.success(f"시뮬레이션 설정이 업데이트되었습니다. (Day {st.session_state.simulation.day}부터 계속)")
+                    
                     st.session_state.simulation.initialize_users()
                     
                 # Run Simulation
@@ -509,13 +525,15 @@ else:
                 sim = st.session_state.simulation
                 
                 stats_history = []
+                if not hard_reset and 'stats_history' in st.session_state and st.session_state.stats_history:
+                     stats_history = st.session_state.stats_history
+                
                 for day in range(st.session_state.num_days):
                     sim.run_day()
                     # Collect daily stats for plotting
-                    # FastSimulation might not store history per user, so we aggregate
                     mmrs = sim.mmr
                     stats_history.append({
-                        "day": day + 1,
+                        "day": sim.day,
                         "avg_mmr": np.mean(mmrs),
                         "min_mmr": np.min(mmrs),
                         "max_mmr": np.max(mmrs)
@@ -523,7 +541,7 @@ else:
                     
                     progress = (day + 1) / st.session_state.num_days
                     progress_bar.progress(progress)
-                    status_text.text(f"시뮬레이션 진행 중: Day {day+1}/{st.session_state.num_days}...")
+                    status_text.text(f"시뮬레이션 진행 중: Day {sim.day} (진행률: {int(progress*100)}%)...")
                 
                 status_text.text("시뮬레이션 완료!")
                 st.session_state.stats_history = stats_history
@@ -532,11 +550,7 @@ else:
             if st.session_state.simulation is not None:
                 st.divider()
                 st.subheader("시즌 관리")
-                reset_day = st.checkbox("시즌 1부터 다시 시작 (날짜 초기화)", value=True)
                 if st.button("시즌 초기화 (Soft Reset)"):
-                    if st.session_state.reset_rules.empty:
-                        st.warning("시즌 초기화 규칙이 설정되지 않았습니다.")
-                    else:
                         try:
                             # Ensure numeric types for sorting and processing
                             rules_df = st.session_state.reset_rules.copy()
@@ -567,9 +581,8 @@ else:
                             
                             st.session_state.simulation.apply_tiered_reset(rules)
                             
-                            if reset_day:
-                                st.session_state.simulation.day = 0
-                                st.session_state.stats_history = []
+                            # Day reset is now handled by re-running simulation with hard_reset=True if desired.
+                            # Soft reset just compresses MMR.
                                 
                             st.success("시즌 초기화가 완료되었습니다. (MMR 압축 및 전적 초기화)")
                             st.rerun()
