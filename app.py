@@ -357,10 +357,13 @@ else:
             st.session_state.decay_pk = st.slider("승부차기승 가중치", 0.0, 1.0, st.session_state.get("decay_pk", 0.6), help="승부차기 승리 시 획득 점수 비율입니다.")
 
             st.subheader("MMR 압축 보정 (Calibration)")
-            st.session_state.calibration_enabled = st.checkbox("보정 모드 활성화", value=st.session_state.get("calibration_enabled", False), help="MMR 압축 현상을 완화하기 위한 보정 모드를 활성화합니다.")
-            if st.session_state.calibration_enabled:
+            st.subheader("MMR 압축 보정 (Calibration)")
+            # st.session_state.calibration_enabled is now controlled in the main Control Panel
+            if st.session_state.get("calibration_enabled", False):
                 st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0), help="보정 모드 시 적용할 추가 K-Factor 배율입니다.")
                 st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10), help="보정 모드가 적용되는 경기 수입니다.")
+            else:
+                st.caption("제어판에서 보정 모드를 활성화하면 추가 설정이 표시됩니다.")
 
         # --- Tier Configuration ---
         if 'tier_config' not in st.session_state:
@@ -467,6 +470,7 @@ else:
         
         with col1:
             st.subheader("제어판")
+            st.checkbox("보정 모드 활성화 (Calibration)", key="calibration_enabled", help="MMR 압축 현상을 완화하기 위한 보정 모드를 활성화합니다.")
             if st.button("시뮬레이션 시작", type="primary"):
                 with st.spinner("시뮬레이션 초기화 중..."):
                     win_type_decay = {'Regular': 1.0, 'Extra': st.session_state.decay_et, 'PK': st.session_state.decay_pk}
@@ -528,6 +532,7 @@ else:
             if st.session_state.simulation is not None:
                 st.divider()
                 st.subheader("시즌 관리")
+                reset_day = st.checkbox("시즌 1부터 다시 시작 (날짜 초기화)", value=True)
                 if st.button("시즌 초기화 (Soft Reset)"):
                     if st.session_state.reset_rules.empty:
                         st.warning("시즌 초기화 규칙이 설정되지 않았습니다.")
@@ -561,6 +566,11 @@ else:
                                 })
                             
                             st.session_state.simulation.apply_tiered_reset(rules)
+                            
+                            if reset_day:
+                                st.session_state.simulation.day = 0
+                                st.session_state.stats_history = []
+                                
                             st.success("시즌 초기화가 완료되었습니다. (MMR 압축 및 전적 초기화)")
                             st.rerun()
                         except Exception as e:
