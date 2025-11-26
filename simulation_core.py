@@ -39,17 +39,16 @@ class ELOConfig:
     win_type_decay: Dict[str, float] = field(default_factory=lambda: {'Regular': 1.0, 'Extra': 0.8, 'PK': 0.6})
     uncertainty_factor: float = 0.9 # Correction for randomness (draws/upsets). 1.0 = No correction.
     calibration_k_bonus: float = 1.0 # Multiplier during calibration
+    calibration_enabled: bool = False
+    calibration_match_count: int = 10
 
 @dataclass
 class MatchConfig:
     draw_prob: float = 0.1 # Probability of draw in regular time
     prob_extra_time: float = 0.2 # If draw, prob to go to Extra Time
     prob_pk: float = 0.5 # If draw in Extra Time, prob to go to PK
-    prob_pk: float = 0.5 # If draw in Extra Time, prob to go to PK
     max_goal_diff: int = 5
     matchmaking_jitter: float = 50.0 # Standard deviation of noise added to MMR for sorting
-    calibration_enabled: bool = False
-    calibration_match_count: int = 10
 
 @dataclass
 class User:
