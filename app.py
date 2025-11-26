@@ -104,6 +104,11 @@ def save_config():
     except Exception as e:
         # st.error(f"Failed to save to Google Sheets: {e}")
         # Fallback to local
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=4)
+        except:
+            pass
     
     stats_history = []
     
