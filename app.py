@@ -7,6 +7,9 @@ from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig
 import json
 import os
 from streamlit_gsheets import GSheetsConnection
+import extra_streamlit_components as stx
+import time
+import datetime
 
 st.set_page_config(page_title="FC 온라인 랭크 시뮬레이션", layout="wide")
 
@@ -102,6 +105,13 @@ def save_config():
             pass
 
 # --- Authentication ---
+# --- Authentication & Session Management ---
+@st.cache_resource(experimental_allow_widgets=True)
+def get_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_manager()
+
 def check_password(username, password):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -166,21 +176,74 @@ def login_page():
         if submit:
             if check_password(username, password):
                 st.session_state["authenticated"] = True
+                # Set cookies for persistence (expire in 1 day, but logic handles 30 min inactivity)
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
+                cookie_manager.set("auth_user", username, expires_at=expires_at)
+                cookie_manager.set("last_activity", str(time.time()), expires_at=expires_at)
                 st.rerun()
             else:
                 st.error("아이디 또는 비밀번호가 잘못되었습니다.")
 
 def logout():
     st.session_state["authenticated"] = False
+    cookie_manager.delete("auth_user")
+    cookie_manager.delete("last_activity")
     st.rerun()
 
 # --- Main Execution Flow ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
+# Check Cookies for Persistence
+if not st.session_state["authenticated"]:
+    auth_user = cookie_manager.get("auth_user")
+    last_activity = cookie_manager.get("last_activity")
+    
+    if auth_user and last_activity:
+        try:
+            last_activity_time = float(last_activity)
+            current_time = time.time()
+            # 30 minutes = 1800 seconds
+            if current_time - last_activity_time > 1800:
+                # Timeout
+                cookie_manager.delete("auth_user")
+                cookie_manager.delete("last_activity")
+                st.warning("30분 동안 활동이 없어 로그아웃 되었습니다.")
+            else:
+                # Restore Session
+                st.session_state["authenticated"] = True
+                # Update last activity
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
+                cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+                st.rerun()
+        except ValueError:
+            pass
+
 if not st.session_state["authenticated"]:
     login_page()
 else:
+    # Update last activity timestamp on every interaction
+    current_time = time.time()
+    expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
+    # Only update if enough time passed to avoid excessive cookie writes? 
+    # Streamlit reruns on interaction, so updating here keeps it alive.
+    # To prevent infinite rerun loops, we don't call rerun() here, just set the cookie.
+    # CookieManager.set might trigger a rerun if key changes, but we are updating value.
+    # Let's check if we need to throttle. For now, simple update.
+    # Actually, setting cookie might trigger rerun. Let's only update if > 1 minute passed since last check?
+    # But we don't have easy access to 'last check' without reading cookie again.
+    # Let's trust the manager or just update.
+    # Optimization: Read cookie first, if diff < 60s, skip.
+    try:
+        last_activity_cookie = cookie_manager.get("last_activity")
+        if last_activity_cookie:
+            if current_time - float(last_activity_cookie) > 60:
+                 cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+        else:
+             cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+    except:
+        pass
+
     # Sidebar Logout
     with st.sidebar:
         st.write(f"로그인됨.")
