@@ -262,6 +262,10 @@ else:
                     {"min_streak": 3, "bonus": 5.0},
                     {"min_streak": 5, "bonus": 10.0}
                 ])
+            # Defensive check: Ensure it's a DataFrame (in case loaded as list from JSON)
+            if not isinstance(st.session_state.streak_rules, pd.DataFrame):
+                st.session_state.streak_rules = pd.DataFrame(st.session_state.streak_rules)
+                
             st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
             
             st.subheader("Goal Difference Multipliers")
@@ -270,6 +274,10 @@ else:
                     {"min_diff": 2, "bonus": 2.0},
                     {"min_diff": 4, "bonus": 5.0}
                 ])
+            # Defensive check
+            if not isinstance(st.session_state.goal_diff_rules, pd.DataFrame):
+                st.session_state.goal_diff_rules = pd.DataFrame(st.session_state.goal_diff_rules)
+                
             st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
             
             st.subheader("Win Type Decay")
@@ -319,6 +327,10 @@ else:
         with st.expander("Reset Rules (Season End)"):
             if 'reset_rules' not in st.session_state:
                 st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
+            # Defensive check
+            if not isinstance(st.session_state.reset_rules, pd.DataFrame):
+                st.session_state.reset_rules = pd.DataFrame(st.session_state.reset_rules)
+                
             st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
 
         if st.button("Save Configuration"):
