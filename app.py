@@ -231,22 +231,6 @@ else:
 
     # --- Sidebar Configuration ---
     with st.sidebar:
-        st.header("시뮬레이션 설정")
-        st.caption(f"Core Version: {CORE_VERSION}")
-        
-        if st.button("⚠️ 설정 초기화 (비상용)", help="에러 발생 시 클릭하세요. 모든 설정이 초기화됩니다."):
-            # Factory Reset: Overwrite remote config with empty JSON to force defaults on reload
-            try:
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                df_to_save = pd.DataFrame([{"ConfigJSON": "{}"}])
-                conn.update(data=df_to_save)
-            except Exception as e:
-                st.error(f"원격 설정 초기화 실패: {e}")
-            
-            st.session_state.clear()
-            st.rerun()
-        st.divider()
-        
         with st.expander("기본 설정 (Global Settings)", expanded=True):
             st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100)
             st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365))
@@ -483,10 +467,14 @@ else:
             
             # Tier Distribution
             st.markdown("### 티어 분포")
-            tiers = [
-                ("Bronze", 0, 1200), ("Silver", 1200, 1400), ("Gold", 1400, 1600),
-                ("Platinum", 1600, 1800), ("Diamond", 1800, 2000), ("Master", 2000, 2400), ("Challenger", 2400, 5000)
-            ]
+            
+            # Use dynamic tier config
+            raw_tiers = st.session_state.tier_config
+            # Sort by Min score to ensure correct order
+            sorted_tiers = sorted(raw_tiers, key=lambda x: x['Min'])
+            
+            tiers = [(t['Tier'], t['Min'], t['Max']) for t in sorted_tiers]
+            
             sim = st.session_state.simulation
             tier_counts = {name: 0 for name, _, _ in tiers}
             for mmr in sim.mmr:
