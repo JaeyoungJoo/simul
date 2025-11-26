@@ -425,6 +425,7 @@ else:
                         match_config=match_config,
                         initial_mmr=st.session_state.initial_mmr
                     )
+                    st.session_state.simulation.initialize_users()
                     
                 # Run Simulation
                 progress_bar = st.progress(0)
