@@ -526,28 +526,6 @@ else:
                     for s in st.session_state.segments:
                         if isinstance(s, dict):
                             segment_configs.append(SegmentConfig(**s))
-                        else:
-                            segment_configs.append(s)
-
-                    # Initialize or Update Simulation
-                    if hard_reset or st.session_state.simulation is None:
-                        st.session_state.simulation = FastSimulation(
-                            num_users=st.session_state.num_users,
-                            segment_configs=segment_configs,
-                            elo_config=elo_config,
-                            match_config=match_config,
-                            initial_mmr=st.session_state.initial_mmr
-                        )
-                        st.session_state.stats_history = []
-                        st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")
-                    else:
-                        # Update existing simulation configs
-                        st.session_state.simulation.elo_config = elo_config
-                        st.session_state.simulation.match_config = match_config
-                        st.session_state.simulation.segment_configs = segment_configs
-                        st.success(f"시뮬레이션 설정이 업데이트되었습니다. (Day {st.session_state.simulation.day}부터 계속)")
-                    
-                    st.session_state.simulation.initialize_users()
 
         with col2:
             st.subheader("실시간 통계 (마지막 날)")

@@ -451,6 +451,9 @@ class FastSimulation:
         current_idx = 0
         total_ratio = sum(s.ratio if not isinstance(s, dict) else s['ratio'] for s in self.segment_configs)
         
+        if total_ratio <= 0:
+            total_ratio = 1.0 # Avoid division by zero
+        
         for i, config in enumerate(self.segment_configs):
             # Handle both object and dict (defensive programming)
             if isinstance(config, dict):
