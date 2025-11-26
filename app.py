@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig, MatchConfig
+from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig, MatchConfig, CORE_VERSION
 import json
 import os
 from streamlit_gsheets import GSheetsConnection
@@ -232,6 +232,7 @@ else:
     # --- Sidebar Configuration ---
     with st.sidebar:
         st.header("시뮬레이션 설정")
+        st.caption(f"Core Version: {CORE_VERSION}")
         
         if st.button("⚠️ 설정 초기화 (비상용)", help="에러 발생 시 클릭하세요. 모든 설정이 초기화됩니다."):
             # Factory Reset: Overwrite remote config with empty JSON to force defaults on reload

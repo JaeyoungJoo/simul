@@ -4,6 +4,9 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
 
+CORE_VERSION = "1.2 (Calibration Added)"
+print(f"Simulation Core Loaded: Version {CORE_VERSION}")
+
 @dataclass
 class MatchLog:
     day: int
