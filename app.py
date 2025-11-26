@@ -498,6 +498,53 @@ else:
             tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
             fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수")
             st.plotly_chart(fig_tier, use_container_width=True)
+
+            # Segment Performance Analysis
+            st.markdown("### 세그먼트 성과 분석 (Segment Performance)")
+            
+            # Prepare Data
+            sim = st.session_state.simulation
+            seg_names_map = {i: name for i, name in enumerate(sim.seg_names)}
+            user_seg_names = [seg_names_map[i] for i in sim.segment_indices]
+            
+            df_users = pd.DataFrame({
+                "MMR": sim.mmr,
+                "True Skill": sim.true_skill,
+                "Segment": user_seg_names
+            })
+            
+            # Filter
+            all_segments = list(sim.seg_names)
+            selected_segments = st.multiselect("세그먼트 필터 (Filter Segments)", all_segments, default=all_segments)
+            
+            if selected_segments:
+                filtered_df = df_users[df_users["Segment"].isin(selected_segments)]
+                
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    st.markdown("**세그먼트별 MMR 분포**")
+                    fig_box = px.box(filtered_df, x="Segment", y="MMR", color="Segment", 
+                                     title="MMR Distribution by Segment")
+                    st.plotly_chart(fig_box, use_container_width=True)
+                    
+                with col_b:
+                    st.markdown("**실력(True Skill) vs MMR**")
+                    # Sample if too large for scatter
+                    if len(filtered_df) > 5000:
+                        plot_df = filtered_df.sample(5000)
+                    else:
+                        plot_df = filtered_df
+                        
+                    fig_scatter = px.scatter(plot_df, x="True Skill", y="MMR", color="Segment",
+                                             title="True Skill vs MMR", hover_data=["Segment"])
+                    # Add identity line
+                    fig_scatter.add_shape(type="line", line=dict(dash="dash", color="gray"),
+                        x0=plot_df["True Skill"].min(), y0=plot_df["True Skill"].min(),
+                        x1=plot_df["True Skill"].max(), y1=plot_df["True Skill"].max())
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+            else:
+                st.warning("분석할 세그먼트를 선택하세요.")
             
         else:
             st.info("분석을 보려면 먼저 시뮬레이션을 실행하세요.")
