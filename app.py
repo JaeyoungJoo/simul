@@ -300,6 +300,32 @@ else:
                 st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0))
                 st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10))
 
+        # --- Tier Configuration ---
+        if 'tier_config' not in st.session_state:
+            st.session_state.tier_config = [
+                {"Tier": "Bronze", "Min": 0, "Max": 1200},
+                {"Tier": "Silver", "Min": 1200, "Max": 1400},
+                {"Tier": "Gold", "Min": 1400, "Max": 1600},
+                {"Tier": "Platinum", "Min": 1600, "Max": 1800},
+                {"Tier": "Diamond", "Min": 1800, "Max": 2000},
+                {"Tier": "Master", "Min": 2000, "Max": 2400},
+                {"Tier": "Challenger", "Min": 2400, "Max": 5000}
+            ]
+
+        with st.expander("티어 기준 설정 (Tier Config)"):
+            st.caption("티어 이름과 점수 구간을 설정하세요.")
+            st.session_state.tier_config = st.data_editor(
+                st.session_state.tier_config,
+                column_config={
+                    "Tier": st.column_config.TextColumn("티어 이름 (Name)", required=True),
+                    "Min": st.column_config.NumberColumn("최소 점수 (Min)", required=True, step=10),
+                    "Max": st.column_config.NumberColumn("최대 점수 (Max)", required=True, step=10),
+                },
+                num_rows="dynamic",
+                hide_index=True,
+                key="tier_editor"
+            )
+
         with st.expander("유저 세그먼트 (티어/실력 분포)"):
             st.write("유저 세그먼트 및 특성을 정의하세요.")
             segment_data = []
