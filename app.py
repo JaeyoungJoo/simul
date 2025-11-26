@@ -420,8 +420,7 @@ else:
                     )
                     st.session_state.simulation = FastSimulation(
                         num_users=st.session_state.num_users,
-                        num_days=st.session_state.num_days,
-                        segments=st.session_state.segments,
+                        segment_configs=st.session_state.segments,
                         elo_config=elo_config,
                         match_config=match_config,
                         initial_mmr=st.session_state.initial_mmr
@@ -434,7 +433,7 @@ else:
                 
                 stats_history = []
                 for day in range(st.session_state.num_days):
-                    sim.run_day(day)
+                    sim.run_day()
                     # Collect daily stats for plotting
                     # FastSimulation might not store history per user, so we aggregate
                     mmrs = sim.mmr
