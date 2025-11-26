@@ -557,12 +557,13 @@ class FastSimulation:
             candidate_mmrs = self.mmr[candidate_indices]
             
             # Calibration Logic: If enabled and matches < count, use True Skill
-            if self.match_config.calibration_enabled:
+            # Calibration Logic: If enabled and matches < count, use True Skill
+            if self.elo_config.calibration_enabled:
                 candidate_matches = self.matches_played[candidate_indices]
                 candidate_true_skill = self.true_skill[candidate_indices]
                 
                 # Use True Skill where matches < limit, else MMR
-                cal_mask = candidate_matches < self.match_config.calibration_match_count
+                cal_mask = candidate_matches < self.elo_config.calibration_match_count
                 sort_values = np.where(cal_mask, candidate_true_skill, candidate_mmrs)
             else:
                 sort_values = candidate_mmrs
@@ -650,14 +651,14 @@ class FastSimulation:
         # Asymmetric Pricing for Calibration
         
         # For A: If A is calibrating, use B's True Skill. Else B's MMR.
-        cal_mask_a = self.matches_played[idx_a] < self.match_config.calibration_match_count
-        rating_b_for_a = np.where(self.match_config.calibration_enabled & cal_mask_a, 
+        cal_mask_a = self.matches_played[idx_a] < self.elo_config.calibration_match_count
+        rating_b_for_a = np.where(self.elo_config.calibration_enabled & cal_mask_a, 
                                   self.true_skill[idx_b], self.mmr[idx_b])
         expected_a = 1 / (1 + 10 ** ((rating_b_for_a - self.mmr[idx_a]) / 400))
         
         # For B: If B is calibrating, use A's True Skill. Else A's MMR.
-        cal_mask_b = self.matches_played[idx_b] < self.match_config.calibration_match_count
-        rating_a_for_b = np.where(self.match_config.calibration_enabled & cal_mask_b, 
+        cal_mask_b = self.matches_played[idx_b] < self.elo_config.calibration_match_count
+        rating_a_for_b = np.where(self.elo_config.calibration_enabled & cal_mask_b, 
                                   self.true_skill[idx_a], self.mmr[idx_a])
         expected_b = 1 / (1 + 10 ** ((rating_a_for_b - self.mmr[idx_b]) / 400))
 
@@ -710,7 +711,7 @@ class FastSimulation:
         final_k_b = k_b * type_mult
         
         # --- Smart Calibration (Vectorized) ---
-        if self.match_config.calibration_enabled:
+        if self.elo_config.calibration_enabled:
             # Calculate Deltas
             delta_a = scores_a - expected_a
             delta_b = (1 - scores_a) - expected_b
