@@ -265,6 +265,10 @@ else:
             # Defensive check: Ensure it's a DataFrame (in case loaded as list from JSON)
             if not isinstance(st.session_state.streak_rules, pd.DataFrame):
                 st.session_state.streak_rules = pd.DataFrame(st.session_state.streak_rules)
+            
+            # Ensure columns exist if empty (Fix for TypeError on empty list)
+            if st.session_state.streak_rules.empty and len(st.session_state.streak_rules.columns) == 0:
+                st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
                 
             st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor", help="Define bonus K-factor additions for winning streaks.")
             
@@ -277,6 +281,10 @@ else:
             # Defensive check
             if not isinstance(st.session_state.goal_diff_rules, pd.DataFrame):
                 st.session_state.goal_diff_rules = pd.DataFrame(st.session_state.goal_diff_rules)
+            
+            # Ensure columns exist if empty
+            if st.session_state.goal_diff_rules.empty and len(st.session_state.goal_diff_rules.columns) == 0:
+                st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
                 
             st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor", help="Define bonus K-factor additions based on goal difference.")
             
@@ -330,12 +338,21 @@ else:
             # Defensive check
             if not isinstance(st.session_state.reset_rules, pd.DataFrame):
                 st.session_state.reset_rules = pd.DataFrame(st.session_state.reset_rules)
-                
+            
+            # Ensure columns exist if empty
+            if st.session_state.reset_rules.empty and len(st.session_state.reset_rules.columns) == 0:
+                 st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
+                 
             st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
 
         if st.button("Save Configuration"):
             save_config()
             st.success("Configuration saved!")
+            
+        st.divider()
+        if st.button("⚠️ Reset Config (Emergency)", help="Click this if you see errors. It will reset all settings to default."):
+            st.session_state.clear()
+            st.rerun()
 
     # --- Main Content ---
     st.title("Rank Simulation Dashboard")
