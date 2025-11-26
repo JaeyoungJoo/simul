@@ -668,7 +668,7 @@ else:
     # --- Comments Section ---
     st.divider()
     st.subheader("사용자 코멘트 / 피드백")
-    comments = st.text_area("피드백을 남겨주세요:", value=st.session_state.get("user_comments", ""), height=100)
+    comments = st.text_area("피드백을 남겨주세요:", value=st.session_state.get("user_comments", ""), height=500)
     if st.button("코멘트 저장"):
         st.session_state.user_comments = comments
         save_config()
