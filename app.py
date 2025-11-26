@@ -526,6 +526,58 @@ else:
                     for s in st.session_state.segments:
                         if isinstance(s, dict):
                             segment_configs.append(SegmentConfig(**s))
+                        else:
+                            segment_configs.append(s)
+
+                    # Initialize or Update Simulation
+                    if hard_reset or st.session_state.simulation is None:
+                        st.session_state.simulation = FastSimulation(
+                            num_users=st.session_state.num_users,
+                            segment_configs=segment_configs,
+                            elo_config=elo_config,
+                            match_config=match_config,
+                            initial_mmr=st.session_state.initial_mmr
+                        )
+                        st.session_state.stats_history = []
+                        st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")
+                    else:
+                        # Update existing simulation configs
+                        st.session_state.simulation.elo_config = elo_config
+                        st.session_state.simulation.match_config = match_config
+                        st.session_state.simulation.segment_configs = segment_configs
+                        st.success(f"시뮬레이션 설정이 업데이트되었습니다. (Day {st.session_state.simulation.day}부터 계속)")
+                    
+                    st.session_state.simulation.initialize_users()
+                    
+                # Run Simulation
+                st.write("Debug: Starting simulation loop...") # Debug
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                sim = st.session_state.simulation
+                
+                stats_history = []
+                if not hard_reset and 'stats_history' in st.session_state and st.session_state.stats_history:
+                     stats_history = st.session_state.stats_history
+                
+                st.write(f"Debug: Num days = {st.session_state.num_days}") # Debug
+                for day in range(st.session_state.num_days):
+                    sim.run_day()
+                    # Collect daily stats for plotting
+                    mmrs = sim.mmr
+                    stats_history.append({
+                        "day": sim.day,
+                        "avg_mmr": np.mean(mmrs),
+                        "min_mmr": np.min(mmrs),
+                        "max_mmr": np.max(mmrs)
+                    })
+                    
+                    progress = (day + 1) / st.session_state.num_days
+                    progress_bar.progress(progress)
+                    status_text.text(f"시뮬레이션 진행 중: Day {sim.day} (진행률: {int(progress*100)}%)...")
+                
+                status_text.text("시뮬레이션 완료!")
+                st.session_state.stats_history = stats_history
+                st.success("시뮬레이션이 성공적으로 종료되었습니다.")
 
         with col2:
             st.subheader("실시간 통계 (마지막 날)")
