@@ -294,23 +294,23 @@ else:
     # --- Sidebar Configuration ---
     with st.sidebar:
         with st.expander("기본 설정 (Global Settings)", expanded=True):
-            st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100)
-            st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365))
-            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0))
+            st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="시뮬레이션에 참여할 총 유저 수입니다.")
+            st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
+            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
 
         with st.expander("매치 설정 (Match Configuration)"):
-            st.session_state.draw_prob = st.slider("무승부 확률 (정규 시간)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1))
-            st.session_state.prob_et = st.slider("연장전 확률 (무승부 시)", 0.0, 1.0, st.session_state.get("prob_et", 0.2))
-            st.session_state.prob_pk = st.slider("승부차기 확률 (연장 무승부 시)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5))
-            st.session_state.max_goal_diff = st.slider("최대 골 득실차", 1, 10, st.session_state.get("max_goal_diff", 5))
-            st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (MMR Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0))
+            st.session_state.draw_prob = st.slider("무승부 확률 (정규 시간)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1), help="정규 시간 내에 무승부가 발생할 확률입니다.")
+            st.session_state.prob_et = st.slider("연장전 확률 (무승부 시)", 0.0, 1.0, st.session_state.get("prob_et", 0.2), help="무승부 시 연장전으로 갈 확률입니다.")
+            st.session_state.prob_pk = st.slider("승부차기 확률 (연장 무승부 시)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5), help="연장전에서도 승부가 나지 않아 승부차기로 갈 확률입니다.")
+            st.session_state.max_goal_diff = st.slider("최대 골 득실차", 1, 10, st.session_state.get("max_goal_diff", 5), help="경기에서 발생할 수 있는 최대 골 득실차입니다.")
+            st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (MMR Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0), help="매칭 시 허용되는 MMR 차이 범위입니다.")
 
         with st.expander("ELO 시스템 설정"):
-            st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 32))
+            st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 32), help="ELO 계산에 사용되는 기본 K-Factor입니다.")
             
             st.subheader("배치고사")
-            st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10))
-            st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0))
+            st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10), help="배치고사로 간주되는 초기 경기 수입니다.")
+            st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0), help="배치고사 기간 동안 적용되는 K-Factor 보너스 배율입니다.")
             
             st.subheader("연승/연패 보너스")
             if 'streak_rules' not in st.session_state:
@@ -353,14 +353,14 @@ else:
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
             
             st.subheader("승리 유형별 가중치 (Decay)")
-            st.session_state.decay_et = st.slider("연장승 가중치", 0.0, 1.0, st.session_state.get("decay_et", 0.8))
-            st.session_state.decay_pk = st.slider("승부차기승 가중치", 0.0, 1.0, st.session_state.get("decay_pk", 0.6))
+            st.session_state.decay_et = st.slider("연장승 가중치", 0.0, 1.0, st.session_state.get("decay_et", 0.8), help="연장전 승리 시 획득 점수 비율입니다 (1.0 = 정상 점수).")
+            st.session_state.decay_pk = st.slider("승부차기승 가중치", 0.0, 1.0, st.session_state.get("decay_pk", 0.6), help="승부차기 승리 시 획득 점수 비율입니다.")
 
             st.subheader("MMR 압축 보정 (Calibration)")
-            st.session_state.calibration_enabled = st.checkbox("보정 모드 활성화", value=st.session_state.get("calibration_enabled", False))
+            st.session_state.calibration_enabled = st.checkbox("보정 모드 활성화", value=st.session_state.get("calibration_enabled", False), help="MMR 압축 현상을 완화하기 위한 보정 모드를 활성화합니다.")
             if st.session_state.calibration_enabled:
-                st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0))
-                st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10))
+                st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0), help="보정 모드 시 적용할 추가 K-Factor 배율입니다.")
+                st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10), help="보정 모드가 적용되는 경기 수입니다.")
 
         # --- Tier Configuration ---
         if 'tier_config' not in st.session_state:
@@ -458,7 +458,7 @@ else:
             st.success("설정이 저장되었습니다!")
 
     # --- Main Content ---
-    st.title("랭크 시뮬레이션 대시보드")
+    st.title("Rank simulation")
 
     tab1, tab2, tab3 = st.tabs(["시뮬레이션 실행", "분석", "매치 기록"])
 
