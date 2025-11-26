@@ -413,7 +413,7 @@ else:
                     # match_config instantiation follows...
                     match_config = MatchConfig(
                         draw_prob=st.session_state.draw_prob,
-                        prob_et=st.session_state.prob_et,
+                        prob_extra_time=st.session_state.prob_et,
                         prob_pk=st.session_state.prob_pk,
                         max_goal_diff=st.session_state.max_goal_diff,
                         matchmaking_jitter=st.session_state.matchmaking_jitter
