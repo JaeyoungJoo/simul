@@ -110,22 +110,7 @@ def save_config():
         except:
             pass
     
-    stats_history = []
-    
-    for day in range(num_days):
-        sim.run_day()
-        stats = sim.get_stats()
-        current_history.append(stats)
-        
-        progress_bar.progress((day + 1) / num_days)
-        status_text.text(f"Simulating Day {day + 1}/{num_days}")
-        
-    status_text.text("Simulation Complete!")
-    st.session_state.sim_result = sim
-    st.session_state.stats_history = current_history
-    if 'season_count' not in st.session_state:
-        st.session_state.season_count = 1
-    st.session_state.season_count = 1
+
 
 # --- Season Management (Soft Reset) ---
 if 'sim_result' in st.session_state:
