@@ -307,6 +307,12 @@ else:
 
         with st.expander("ELO 시스템 설정"):
             st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 32), help="ELO 계산에 사용되는 기본 K-Factor입니다.")
+            st.session_state.max_k = st.number_input("최대 K-Factor", value=st.session_state.get("max_k", 64), help="K-Factor가 가질 수 있는 최대값입니다.")
+            st.session_state.placement_k_factor = st.number_input("배치고사 K-Factor", value=st.session_state.get("placement_k_factor", 64), help="배치고사 기간 동안 적용되는 K-Factor입니다.")
+            st.session_state.streak_bonus = st.number_input("연승 보너스", value=st.session_state.get("streak_bonus", 1.0), help="연승 시 추가되는 점수 보너스입니다.")
+            st.session_state.streak_threshold = st.number_input("연승 기준", value=st.session_state.get("streak_threshold", 3), help="연승 보너스가 적용되기 시작하는 승리 횟수입니다.")
+            st.session_state.gd_bonus_weight = st.number_input("골 득실 가중치", value=st.session_state.get("gd_bonus_weight", 1.0), help="골 득실 차이에 따른 점수 가중치입니다.")
+            st.session_state.mmr_compression_correction = st.number_input("MMR 압축 보정", value=st.session_state.get("mmr_compression_correction", 0.0), help="MMR 압축 현상을 완화하기 위한 보정값입니다.")
             
             st.subheader("배치고사")
             st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10), help="배치고사로 간주되는 초기 경기 수입니다.")
