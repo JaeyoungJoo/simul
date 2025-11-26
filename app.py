@@ -238,6 +238,14 @@ else:
         st.header("Simulation Settings")
         
         if st.button("⚠️ Reset Config (Emergency)", help="Click this if you see errors. It will reset all settings to default."):
+            # Factory Reset: Overwrite remote config with empty JSON to force defaults on reload
+            try:
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                df_to_save = pd.DataFrame([{"ConfigJSON": "{}"}])
+                conn.update(data=df_to_save)
+            except Exception as e:
+                st.error(f"Failed to reset remote config: {e}")
+            
             st.session_state.clear()
             st.rerun()
         st.divider()
@@ -326,23 +334,29 @@ else:
                     "active_hour_start": s.active_hour_start,
                     "active_hour_end": s.active_hour_end
                 })
-            edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor", help="Table to configure user segments.")
+            
+            try:
+                edited_segments = st.data_editor(pd.DataFrame(segment_data), num_rows="dynamic", use_container_width=True, key="segment_editor", help="Table to configure user segments.")
+            except Exception as e:
+                st.error(f"Error displaying segments: {e}")
+                edited_segments = pd.DataFrame() # Fallback
             
             new_segments = []
             total_ratio = 0
-            for index, row in edited_segments.iterrows():
-                try:
-                    s = SegmentConfig(
-                        row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
-                        int(row["matches_per_day_min"]), int(row["matches_per_day_max"]),
-                        float(row["true_skill_min"]), float(row["true_skill_max"]),
-                        int(row["active_hour_start"]), int(row["active_hour_end"])
-                    )
-                    new_segments.append(s)
-                    total_ratio += s.ratio
-                except:
-                    pass
-            st.session_state.segments = new_segments
+            if not edited_segments.empty:
+                for index, row in edited_segments.iterrows():
+                    try:
+                        s = SegmentConfig(
+                            row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
+                            int(row["matches_per_day_min"]), int(row["matches_per_day_max"]),
+                            float(row["true_skill_min"]), float(row["true_skill_max"]),
+                            int(row["active_hour_start"]), int(row["active_hour_end"])
+                        )
+                        new_segments.append(s)
+                        total_ratio += s.ratio
+                    except:
+                        pass
+                st.session_state.segments = new_segments
             st.write(f"Total Ratio: {total_ratio:.4f}")
 
         with st.expander("Reset Rules (Season End)"):
