@@ -70,6 +70,8 @@ def save_config():
         "calibration_k_bonus": st.session_state.get("calibration_k_bonus", 2.0),
         "calibration_enabled": st.session_state.get("calibration_enabled", False),
         "calibration_match_count": st.session_state.get("calibration_match_count", 10),
+        # Tier Config
+        "tier_config": st.session_state.get("tier_config", []),
         # Segments (Serialize)
         "segments": [
             {
@@ -208,6 +210,8 @@ else:
                     st.session_state.streak_rules = pd.DataFrame(v)
                 elif k == 'goal_diff_rules':
                     st.session_state.goal_diff_rules = pd.DataFrame(v)
+                elif k == 'tier_config':
+                    st.session_state.tier_config = v
                 else:
                     st.session_state[k] = v
             if "user_comments" in loaded_config:
