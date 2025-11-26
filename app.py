@@ -106,11 +106,7 @@ def save_config():
 
 # --- Authentication ---
 # --- Authentication & Session Management ---
-@st.cache_resource(experimental_allow_widgets=True)
-def get_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_manager()
+cookie_manager = stx.CookieManager()
 
 def check_password(username, password):
     try:
