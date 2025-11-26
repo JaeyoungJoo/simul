@@ -8,7 +8,7 @@ import json
 import os
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="FC Online Rank Simulation", layout="wide")
+st.set_page_config(page_title="FC 온라인 랭크 시뮬레이션", layout="wide")
 
 # --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
@@ -113,18 +113,18 @@ def check_password(username, password):
             try:
                 df = conn.read(worksheet="users", ttl=0)
             except Exception as e:
-                st.error(f"Error: Could not find a worksheet named 'Users' or 'users'. Please check the tab name in your Google Sheet. (Details: {e})")
+                st.error(f"오류: 'Users' 또는 'users' 시트를 찾을 수 없습니다. 구글 시트의 탭 이름을 확인해주세요. (상세: {e})")
                 return False
         
         if df.empty:
-            st.error("Debug: Users sheet is empty.")
+            st.error("디버그: Users 시트가 비어있습니다.")
             return False
             
         # Normalize columns: strip whitespace and lowercase
         df.columns = [str(c).strip().lower() for c in df.columns]
         
         if 'username' not in df.columns or 'password' not in df.columns:
-            st.error(f"Debug: Missing 'username' or 'password' columns. Found: {df.columns.tolist()}")
+            st.error(f"디버그: 'username' 또는 'password' 컬럼이 없습니다. 발견된 컬럼: {df.columns.tolist()}")
             return False
 
         # Normalize data for comparison
@@ -143,34 +143,30 @@ def check_password(username, password):
             if stored_password == password.strip():
                 return True
             else:
-                # Debug: Password mismatch
-                # st.warning(f"Debug: Password mismatch for {username}. Stored: '{stored_password}', Input: '{password}'")
                 pass
         else:
-             # Debug: User not found
-             # st.warning(f"Debug: User '{username}' not found in sheet.")
              pass
              
         return False
     except Exception as e:
-        st.error(f"Login Error: {e}")
+        st.error(f"로그인 오류: {e}")
         return False
 
 def login_page():
-    st.title("Login")
-    st.info("Please log in to access the simulation.")
+    st.title("로그인")
+    st.info("시뮬레이션을 이용하려면 로그인하세요.")
     
     with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
+        username = st.text_input("아이디")
+        password = st.text_input("비밀번호", type="password")
+        submit = st.form_submit_button("로그인")
         
         if submit:
             if check_password(username, password):
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
-                st.error("Invalid username or password")
+                st.error("아이디 또는 비밀번호가 잘못되었습니다.")
 
 def logout():
     st.session_state["authenticated"] = False
@@ -185,8 +181,8 @@ if not st.session_state["authenticated"]:
 else:
     # Sidebar Logout
     with st.sidebar:
-        st.write(f"Logged in.")
-        if st.button("Logout"):
+        st.write(f"로그인됨.")
+        if st.button("로그아웃"):
             logout()
         st.divider()
 
@@ -194,7 +190,7 @@ else:
     
     # Load Config at Startup
     if 'config_loaded' not in st.session_state:
-        with st.spinner("Loading config from database..."):
+        with st.spinner("데이터베이스에서 설정을 불러오는 중..."):
             loaded_config = load_config()
             
         if loaded_config:
@@ -204,7 +200,7 @@ else:
                     try:
                         st.session_state.segments = [SegmentConfig(**s) for s in v]
                     except TypeError:
-                        st.warning("Config schema mismatch for segments. Using defaults.")
+                        st.warning("세그먼트 설정 형식이 맞지 않아 기본값을 사용합니다.")
                         st.session_state.segments = [] 
                 elif k == 'reset_rules':
                     st.session_state.reset_rules = pd.DataFrame(v)
@@ -222,12 +218,12 @@ else:
     # Initialize Session State (Defaults)
     if 'segments' not in st.session_state:
         st.session_state.segments = [
-            SegmentConfig("Super Champions", 0.0003, 0.95, 10, 30, 4.0, 5.0, 18, 2),
-            SegmentConfig("Champions", 0.0027, 0.85, 5, 15, 3.0, 4.0, 18, 2),
-            SegmentConfig("World Class", 0.15, 0.60, 3, 10, 1.0, 3.0, 19, 1),
-            SegmentConfig("Professional", 0.30, 0.40, 2, 5, -1.0, 1.0, 19, 1),
-            SegmentConfig("Semi-Pro", 0.35, 0.20, 1, 3, -3.0, -1.0, 20, 0),
-            SegmentConfig("Amateur", 0.197, 0.10, 0, 2, -5.0, -3.0, 20, 0)
+            SegmentConfig("Super Champions", 0.0003, 0.95, 10.0, 30.0, 4.0, 5.0, 18, 2),
+            SegmentConfig("Champions", 0.0027, 0.85, 5.0, 15.0, 3.0, 4.0, 18, 2),
+            SegmentConfig("World Class", 0.15, 0.60, 3.0, 10.0, 1.0, 3.0, 19, 1),
+            SegmentConfig("Professional", 0.30, 0.40, 2.0, 5.0, -1.0, 1.0, 19, 1),
+            SegmentConfig("Semi-Pro", 0.35, 0.20, 1.0, 3.0, -3.0, -1.0, 20, 0),
+            SegmentConfig("Amateur", 0.197, 0.10, 0.0, 2.0, -5.0, -3.0, 20, 0)
         ]
 
     if 'simulation' not in st.session_state:
@@ -235,41 +231,41 @@ else:
 
     # --- Sidebar Configuration ---
     with st.sidebar:
-        st.header("Simulation Settings")
+        st.header("시뮬레이션 설정")
         
-        if st.button("⚠️ Reset Config (Emergency)", help="Click this if you see errors. It will reset all settings to default."):
+        if st.button("⚠️ 설정 초기화 (비상용)", help="에러 발생 시 클릭하세요. 모든 설정이 초기화됩니다."):
             # Factory Reset: Overwrite remote config with empty JSON to force defaults on reload
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
                 df_to_save = pd.DataFrame([{"ConfigJSON": "{}"}])
                 conn.update(data=df_to_save)
             except Exception as e:
-                st.error(f"Failed to reset remote config: {e}")
+                st.error(f"원격 설정 초기화 실패: {e}")
             
             st.session_state.clear()
             st.rerun()
         st.divider()
         
-        with st.expander("Global Settings", expanded=True):
-            st.session_state.num_users = st.number_input("Number of Users", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="Total number of users in the simulation.")
-            st.session_state.num_days = st.number_input("Simulation Days", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="Duration of the simulation in days.")
-            st.session_state.initial_mmr = st.number_input("Initial MMR", value=st.session_state.get("initial_mmr", 1000.0), help="Starting MMR for all users.")
+        with st.expander("기본 설정 (Global Settings)", expanded=True):
+            st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100)
+            st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365))
+            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0))
 
-        with st.expander("Match Configuration"):
-            st.session_state.draw_prob = st.slider("Draw Probability (Regular Time)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1), help="Probability of a match ending in a draw after regular time.")
-            st.session_state.prob_et = st.slider("Extra Time Probability (given Draw)", 0.0, 1.0, st.session_state.get("prob_et", 0.2), help="Probability of going to extra time if the match is a draw.")
-            st.session_state.prob_pk = st.slider("Penalty Shootout Probability (given ET)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5), help="Probability of going to penalties if extra time is also a draw.")
-            st.session_state.max_goal_diff = st.slider("Max Goal Difference", 1, 10, st.session_state.get("max_goal_diff", 5), help="Maximum possible goal difference in a match.")
-            st.session_state.matchmaking_jitter = st.number_input("Matchmaking Jitter (MMR)", value=st.session_state.get("matchmaking_jitter", 50.0), help="Randomness added to matchmaking to simulate imperfect pairing.")
+        with st.expander("매치 설정 (Match Configuration)"):
+            st.session_state.draw_prob = st.slider("무승부 확률 (정규 시간)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1))
+            st.session_state.prob_et = st.slider("연장전 확률 (무승부 시)", 0.0, 1.0, st.session_state.get("prob_et", 0.2))
+            st.session_state.prob_pk = st.slider("승부차기 확률 (연장 무승부 시)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5))
+            st.session_state.max_goal_diff = st.slider("최대 골 득실차", 1, 10, st.session_state.get("max_goal_diff", 5))
+            st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (MMR Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0))
 
-        with st.expander("ELO System Config"):
-            st.session_state.base_k = st.number_input("Base K-Factor", value=st.session_state.get("base_k", 32), help="Standard K-factor for ELO calculations.")
+        with st.expander("ELO 시스템 설정"):
+            st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 32))
             
-            st.subheader("Placement Matches")
-            st.session_state.placement_matches = st.number_input("Number of Placement Matches", value=st.session_state.get("placement_matches", 10), help="Number of initial matches with boosted K-factor.")
-            st.session_state.placement_bonus = st.number_input("Placement K-Factor Bonus Multiplier", value=st.session_state.get("placement_bonus", 4.0), help="Multiplier for K-factor during placement matches.")
+            st.subheader("배치고사")
+            st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10))
+            st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0))
             
-            st.subheader("Streak Multipliers")
+            st.subheader("연승/연패 보너스")
             if 'streak_rules' not in st.session_state:
                 st.session_state.streak_rules = pd.DataFrame([
                     {"min_streak": 3, "bonus": 5.0},
@@ -286,10 +282,10 @@ else:
             try:
                 st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor")
             except Exception as e:
-                st.error(f"Error displaying streak rules: {e}")
+                st.error(f"연승 규칙 표시 오류: {e}")
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
             
-            st.subheader("Goal Difference Multipliers")
+            st.subheader("골 득실 보너스")
             if 'goal_diff_rules' not in st.session_state:
                 st.session_state.goal_diff_rules = pd.DataFrame([
                     {"min_diff": 2, "bonus": 2.0},
@@ -306,21 +302,21 @@ else:
             try:
                 st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor")
             except Exception as e:
-                st.error(f"Error displaying goal diff rules: {e}")
+                st.error(f"골 득실 규칙 표시 오류: {e}")
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
             
-            st.subheader("Win Type Decay")
-            st.session_state.decay_et = st.slider("Extra Time Win Decay", 0.0, 1.0, st.session_state.get("decay_et", 0.8), help="Multiplier for ELO gain when winning in extra time.")
-            st.session_state.decay_pk = st.slider("Penalty Win Decay", 0.0, 1.0, st.session_state.get("decay_pk", 0.6), help="Multiplier for ELO gain when winning in penalties.")
+            st.subheader("승리 유형별 가중치 (Decay)")
+            st.session_state.decay_et = st.slider("연장승 가중치", 0.0, 1.0, st.session_state.get("decay_et", 0.8))
+            st.session_state.decay_pk = st.slider("승부차기승 가중치", 0.0, 1.0, st.session_state.get("decay_pk", 0.6))
 
-            st.subheader("MMR Compression Correction (Calibration)")
-            st.session_state.calibration_enabled = st.checkbox("Enable Calibration Mode", value=st.session_state.get("calibration_enabled", False), help="If enabled, applies a K-factor bonus when MMR is compressed.")
+            st.subheader("MMR 압축 보정 (Calibration)")
+            st.session_state.calibration_enabled = st.checkbox("보정 모드 활성화", value=st.session_state.get("calibration_enabled", False))
             if st.session_state.calibration_enabled:
-                st.session_state.calibration_k_bonus = st.number_input("Calibration K-Bonus Multiplier", value=st.session_state.get("calibration_k_bonus", 2.0), help="Multiplier for K-factor during calibration.")
-                st.session_state.calibration_match_count = st.number_input("Calibration Match Count", value=st.session_state.get("calibration_match_count", 10), help="Number of matches to apply calibration bonus.")
+                st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0))
+                st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10))
 
-        with st.expander("User Segments"):
-            st.write("Define user segments and their properties.")
+        with st.expander("유저 세그먼트 (티어/실력 분포)"):
+            st.write("유저 세그먼트 및 특성을 정의하세요.")
             segment_data = []
             for s in st.session_state.segments:
                 segment_data.append({
@@ -346,7 +342,7 @@ else:
                             
                 edited_segments = st.data_editor(df_segments, num_rows="dynamic", use_container_width=True, key="segment_editor")
             except Exception as e:
-                st.error(f"Error displaying segments: {e}")
+                st.error(f"세그먼트 표시 오류: {e}")
                 edited_segments = pd.DataFrame() # Fallback
             
             new_segments = []
@@ -365,9 +361,9 @@ else:
                     except:
                         pass
                 st.session_state.segments = new_segments
-            st.write(f"Total Ratio: {total_ratio:.4f}")
+            st.write(f"총 비율 합계: {total_ratio:.4f}")
 
-        with st.expander("Reset Rules (Season End)"):
+        with st.expander("시즌 초기화 규칙 (Season End)"):
             if 'reset_rules' not in st.session_state:
                 st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
             # Defensive check
@@ -381,25 +377,25 @@ else:
             try:
                 st.session_state.reset_rules = st.data_editor(st.session_state.reset_rules, num_rows="dynamic", use_container_width=True, key="reset_editor")
             except Exception as e:
-                st.error(f"Error displaying reset rules: {e}")
+                st.error(f"초기화 규칙 표시 오류: {e}")
                 st.session_state.reset_rules = pd.DataFrame(columns=["tier_name", "min_mmr", "reset_mmr", "soft_reset_ratio"])
 
-        if st.button("Save Configuration"):
+        if st.button("설정 저장"):
             save_config()
-            st.success("Configuration saved!")
+            st.success("설정이 저장되었습니다!")
 
     # --- Main Content ---
-    st.title("Rank Simulation Dashboard")
+    st.title("랭크 시뮬레이션 대시보드")
 
-    tab1, tab2, tab3 = st.tabs(["Run Simulation", "Analysis", "Match Inspector"])
+    tab1, tab2, tab3 = st.tabs(["시뮬레이션 실행", "분석", "매치 기록"])
 
     with tab1:
         col1, col2 = st.columns([1, 2])
         
         with col1:
-            st.subheader("Control Panel")
-            if st.button("Start Simulation", type="primary"):
-                with st.spinner("Initializing Simulation..."):
+            st.subheader("제어판")
+            if st.button("시뮬레이션 시작", type="primary"):
+                with st.spinner("시뮬레이션 초기화 중..."):
                     elo_config = ELOConfig(
                         base_k=st.session_state.base_k,
                         placement_matches=st.session_state.placement_matches,
@@ -448,42 +444,42 @@ else:
                     
                     progress = (day + 1) / st.session_state.num_days
                     progress_bar.progress(progress)
-                    status_text.text(f"Simulating Day {day+1}/{st.session_state.num_days}...")
+                    status_text.text(f"시뮬레이션 진행 중: Day {day+1}/{st.session_state.num_days}...")
                 
-                status_text.text("Simulation Complete!")
+                status_text.text("시뮬레이션 완료!")
                 st.session_state.stats_history = stats_history
-                st.success("Simulation finished successfully.")
+                st.success("시뮬레이션이 성공적으로 종료되었습니다.")
 
         with col2:
-            st.subheader("Real-time Stats (Last Day)")
+            st.subheader("실시간 통계 (마지막 날)")
             if st.session_state.simulation:
                 sim = st.session_state.simulation
                 total_matches = np.sum(sim.matches_played)
                 avg_mmr = np.mean(sim.mmr)
                 
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Total Matches", f"{total_matches:,}")
-                m2.metric("Average MMR", f"{avg_mmr:.2f}")
-                m3.metric("Active Users", f"{sim.num_users:,}")
+                m1.metric("총 경기 수", f"{total_matches:,}")
+                m2.metric("평균 MMR", f"{avg_mmr:.2f}")
+                m3.metric("활성 유저", f"{sim.num_users:,}")
                 
-                fig = px.histogram(x=sim.mmr, nbins=50, title="Final MMR Distribution", labels={'x': 'MMR', 'y': 'Count'})
+                fig = px.histogram(x=sim.mmr, nbins=50, title="최종 MMR 분포", labels={'x': 'MMR', 'y': 'Count'})
                 st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
-        st.subheader("Simulation Analysis")
+        st.subheader("시뮬레이션 분석")
         if st.session_state.simulation and 'stats_history' in st.session_state:
             stats_history = st.session_state.stats_history
             
             # MMR Trends
             df_stats = pd.DataFrame(stats_history)
             fig_trends = go.Figure()
-            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['avg_mmr'], name='Average MMR'))
-            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['min_mmr'], name='Min MMR'))
-            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['max_mmr'], name='Max MMR'))
+            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['avg_mmr'], name='평균 MMR'))
+            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['min_mmr'], name='최소 MMR'))
+            fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['max_mmr'], name='최대 MMR'))
             st.plotly_chart(fig_trends, use_container_width=True)
             
             # Tier Distribution
-            st.markdown("### Tier Distribution")
+            st.markdown("### 티어 분포")
             tiers = [
                 ("Bronze", 0, 1200), ("Silver", 1200, 1400), ("Gold", 1400, 1600),
                 ("Platinum", 1600, 1800), ("Diamond", 1800, 2000), ("Master", 2000, 2400), ("Challenger", 2400, 5000)
@@ -497,32 +493,32 @@ else:
                         break
             
             tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
-            fig_tier = px.bar(tier_df, x="Tier", y="Count", title="User Count by Tier")
+            fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수")
             st.plotly_chart(fig_tier, use_container_width=True)
             
         else:
-            st.info("Run the simulation first to see analysis.")
+            st.info("분석을 보려면 먼저 시뮬레이션을 실행하세요.")
 
     with tab3:
-        st.subheader("Match Inspector")
+        st.subheader("매치 기록")
         if st.session_state.simulation:
             sim = st.session_state.simulation
             # Fast Mode Logic
-            st.info("Fast Mode Active: Viewing Sampled Users per Segment")
+            st.info("고속 모드 활성: 세그먼트별 샘플 유저 보기")
             dropdown_options = {}
             for idx, name in sim.watched_indices.items():
                 label = f"{name} (ID: {idx})"
                 dropdown_options[label] = idx
                 
-            selected_label = st.selectbox("Select Segment Sample to View", list(dropdown_options.keys()))
+            selected_label = st.selectbox("확인할 샘플 유저 선택", list(dropdown_options.keys()))
             
             if selected_label:
                 target_idx = dropdown_options[selected_label]
                 selected_segment = sim.watched_indices[target_idx]
                 
-                st.write(f"**Sample User ID: {target_idx} ({selected_segment})**")
-                st.write(f"Current MMR: {sim.mmr[target_idx]:.2f} | True Skill: {sim.true_skill[target_idx]:.2f}")
-                st.write(f"Record: {sim.wins[target_idx]}W - {sim.draws[target_idx]}D - {sim.losses[target_idx]}L")
+                st.write(f"**샘플 유저 ID: {target_idx} ({selected_segment})**")
+                st.write(f"현재 MMR: {sim.mmr[target_idx]:.2f} | 실력(True Skill): {sim.true_skill[target_idx]:.2f}")
+                st.write(f"전적: {sim.wins[target_idx]}승 - {sim.draws[target_idx]}무 - {sim.losses[target_idx]}패")
                 
                 logs = sim.match_logs.get(target_idx, [])
                 if logs:
@@ -539,15 +535,15 @@ else:
                         })
                     st.dataframe(pd.DataFrame(log_data))
                 else:
-                    st.info("No matches played yet.")
+                    st.info("진행된 경기가 없습니다.")
         else:
-            st.info("Run the simulation first to inspect matches.")
+            st.info("매치 기록을 보려면 먼저 시뮬레이션을 실행하세요.")
 
     # --- Comments Section ---
     st.divider()
-    st.subheader("User Comments / Feedback")
-    comments = st.text_area("Leave your feedback here:", value=st.session_state.get("user_comments", ""), height=100)
-    if st.button("Save Comments"):
+    st.subheader("사용자 코멘트 / 피드백")
+    comments = st.text_area("피드백을 남겨주세요:", value=st.session_state.get("user_comments", ""), height=100)
+    if st.button("코멘트 저장"):
         st.session_state.user_comments = comments
         save_config()
-        st.success("Comments saved!")
+        st.success("코멘트가 저장되었습니다!")
