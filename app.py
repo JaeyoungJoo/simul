@@ -11,7 +11,7 @@ import extra_streamlit_components as stx
 import time
 import datetime
 
-st.set_page_config(page_title="FC 온라인 랭크 시뮬레이션", layout="wide")
+st.set_page_config(page_title="Rank Simulation", layout="wide")
 
 # --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
@@ -747,6 +747,7 @@ else:
                             "Day": log.day,
                             "Opponent ID": log.opponent_id,
                             "Opponent MMR": f"{log.opponent_mmr:.1f}",
+                            "Opponent True Skill": f"{log.opponent_true_skill:.1f}",
                             "Result": f"{log.result} ({log.result_type})",
                             "Goal Diff": log.goal_diff,
                             "Change": f"{log.mmr_change:+.1f}",
