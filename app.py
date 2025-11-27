@@ -12,6 +12,26 @@ import time
 import datetime
 import io
 
+
+def safe_create_tier_config(**kwargs):
+    try:
+        return TierConfig(**kwargs)
+    except TypeError:
+        # Fallback for legacy class definition
+        # Create with minimal args and set attributes manually
+        try:
+            # Try with fields that likely exist
+            t = TierConfig(name=kwargs["name"], type=kwargs["type"], 
+                           min_mmr=kwargs.get("min_mmr", 0), max_mmr=kwargs.get("max_mmr", 9999))
+        except TypeError:
+             # Fallback to absolute minimum
+             t = TierConfig(name=kwargs["name"], type=kwargs["type"])
+        
+        # Set all provided attributes
+        for k, v in kwargs.items():
+            setattr(t, k, v)
+        return t
+
 def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None):
     with st.expander(f"{label} - CSV 일괄 입력 (Bulk Input)"):
         st.caption("엑셀이나 CSV 데이터를 복사해서 붙여넣으세요. (첫 줄은 헤더여야 합니다)")
@@ -504,6 +524,8 @@ else:
                 TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
             ]
 
+
+
         with st.expander("티어 기준 설정 (Tier Config)"):
             st.caption("티어별 승강등 규칙을 설정하세요. 순서는 낮은 티어부터 높은 티어 순입니다.")
             
@@ -515,15 +537,15 @@ else:
                     "type": t.type.value,
                     "min_mmr": t.min_mmr,
                     "max_mmr": t.max_mmr,
-                    "demotion_lives": t.demotion_lives,
-                    "points_win": t.points_win,
-                    "points_draw": t.points_draw,
-                    "promotion_points": t.promotion_points,
-                    "capacity": t.capacity,
-                    "placement_min_mmr": t.placement_min_mmr,
-                    "placement_max_mmr": t.placement_max_mmr,
-                    "promotion_points_low": t.promotion_points_low,
-                    "promotion_points_high": t.promotion_points_high
+                    "demotion_lives": getattr(t, "demotion_lives", 0),
+                    "points_win": getattr(t, "points_win", 0),
+                    "points_draw": getattr(t, "points_draw", 0),
+                    "promotion_points": getattr(t, "promotion_points", 100),
+                    "capacity": getattr(t, "capacity", 0),
+                    "placement_min_mmr": getattr(t, "placement_min_mmr", 0),
+                    "placement_max_mmr": getattr(t, "placement_max_mmr", 0),
+                    "promotion_points_low": getattr(t, "promotion_points_low", getattr(t, "promotion_points", 100)),
+                    "promotion_points_high": getattr(t, "promotion_points_high", getattr(t, "promotion_points", 100))
                 })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -569,7 +591,7 @@ else:
                 try:
                     bulk_tiers = []
                     for index, row in new_tier_df.iterrows():
-                        bulk_tiers.append(TierConfig(
+                        bulk_tiers.append(safe_create_tier_config(
                             name=str(row["name"]),
                             type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
                             min_mmr=int(row["min_mmr"]),
@@ -594,7 +616,7 @@ else:
             if not edited_tiers.empty:
                 for index, row in edited_tiers.iterrows():
                     try:
-                        new_tiers.append(TierConfig(
+                        new_tiers.append(safe_create_tier_config(
                             name=row["name"],
                             type=TierType(row["type"]),
                             min_mmr=int(row["min_mmr"]),
