@@ -445,7 +445,7 @@ else:
                 df_tiers,
                 column_config={
                     "name": st.column_config.TextColumn("티어 이름", required=True),
-                    "type": st.column_config.SelectColumn("타입", options=["MMR", "Ladder", "Ratio"], required=True),
+                    "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio"], required=True),
                     "min_mmr": st.column_config.NumberColumn("최소 MMR", help="MMR/Ladder 타입의 진입/강등 기준"),
                     "max_mmr": st.column_config.NumberColumn("최대 MMR", help="MMR 타입의 승급 기준"),
                     "demotion_lives": st.column_config.NumberColumn("강등 방어 (Lives)", help="강등 조건 도달 시 버틸 수 있는 패배 횟수 (0=즉시 강등)"),
