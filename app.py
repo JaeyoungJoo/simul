@@ -731,6 +731,7 @@ else:
                         st.session_state.simulation = FastSimulation(
                             num_users=st.session_state.num_users,
                             segment_configs=segment_configs,
+                            elo_config=elo_config,
                             match_config=match_config,
                             tier_configs=st.session_state.tier_config,
                             initial_mmr=st.session_state.initial_mmr
