@@ -26,6 +26,8 @@ class TierConfig:
     points_win: int = 0
     points_draw: int = 0
     promotion_points: int = 100
+    promotion_points_low: int = 100 # Points needed if MMR < min_mmr
+    promotion_points_high: int = 100 # Points needed if MMR >= max_mmr
     
     # Ratio specific
     capacity: int = 0 # Absolute number of users (e.g., 100)
@@ -33,7 +35,6 @@ class TierConfig:
     # Placement specific
     placement_min_mmr: int = 0
     placement_max_mmr: int = 0
-
 
 @dataclass
 class MatchLog:
@@ -442,16 +443,17 @@ class Simulation:
             user.losses = 0
             user.draws = 0
             user.current_streak = 0
-
 class FastSimulation:
     def __init__(self, num_users: int, segment_configs: List[SegmentConfig],
                  elo_config: ELOConfig, match_config: MatchConfig, 
                  tier_configs: List[TierConfig] = None,
-                 initial_mmr: float = 1000.0):
+                 initial_mmr: float = 1000.0,
+                 point_convergence_rate: float = 0.5):
         self.num_users = num_users
         self.elo_config = elo_config
         self.match_config = match_config
         self.initial_mmr = initial_mmr
+        self.point_convergence_rate = point_convergence_rate
         self.segment_configs = segment_configs
         self.tier_configs = tier_configs if tier_configs else []
         self.day = 0
@@ -805,9 +807,13 @@ class FastSimulation:
                 ))
 
         if self.tier_configs:
-            self._process_tier_updates(idx_a, idx_b, final_win_a, final_draw, final_loss_a)
+            # Calculate MMR changes for all users in batch for passing to tier updates
+            # We already have new_ra, ra, new_rb, rb
+            change_a = new_ra - ra
+            change_b = new_rb - rb
+            self._process_tier_updates(idx_a, idx_b, final_win_a, final_draw, final_loss_a, change_a, change_b)
 
-    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a):
+    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
         all_idx = np.concatenate([idx_a, idx_b])
         res_a = np.zeros(len(idx_a), dtype=int)
         res_a[win_a] = 1
@@ -818,6 +824,7 @@ class FastSimulation:
         res_b[loss_a] = 1
         
         all_res = np.concatenate([res_a, res_b])
+        all_mmr_change = np.concatenate([mmr_change_a, mmr_change_b])
         
         # Placement Logic
         if self.elo_config.placement_matches > 0:
@@ -837,65 +844,104 @@ class FastSimulation:
             mask = current_tiers == t_idx
             indices = all_idx[mask]
             results = all_res[mask]
+            mmr_changes = all_mmr_change[mask]
+            current_mmrs = self.mmr[indices]
+            
+            # --- Point Calculation ---
+            points_change = np.zeros(len(indices), dtype=float)
             
             if config.type == TierType.LADDER:
-                points_change = np.zeros(len(indices), dtype=int)
                 points_change[results == 1] = config.points_win
                 points_change[results == 0] = config.points_draw
                 
-                self.user_ladder_points[indices] += points_change
-                
-                prom_mask = self.user_ladder_points[indices] >= config.promotion_points
-                if t_idx < len(self.tier_configs) - 1:
-                    prom_indices = indices[prom_mask]
-                    if len(prom_indices) > 0:
-                        self.user_tier_index[prom_indices] += 1
-                        self.user_ladder_points[prom_indices] = 0
-                        self.user_demotion_lives[prom_indices] = 0
-                        self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
-                
-                reset_mask = results >= 0
-                self.user_demotion_lives[indices[reset_mask]] = 0
-                
-                loss_mask = results == -1
-                if config.demotion_lives > 0:
-                    self.user_demotion_lives[indices[loss_mask]] += 1
-                    demote_mask = self.user_demotion_lives[indices] >= config.demotion_lives
-                    
-                    if t_idx > 0:
-                        dem_indices = indices[demote_mask]
-                        if len(dem_indices) > 0:
-                            self.user_tier_index[dem_indices] -= 1
-                            self.user_ladder_points[dem_indices] = 0
-                            self.user_demotion_lives[dem_indices] = 0
-                            self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
-            
             elif config.type == TierType.MMR:
-                current_mmrs = self.mmr[indices]
-                prom_mask = current_mmrs >= config.max_mmr
-                if t_idx < len(self.tier_configs) - 1:
-                    prom_indices = indices[prom_mask]
-                    if len(prom_indices) > 0:
-                        self.user_tier_index[prom_indices] += 1
-                        self.user_demotion_lives[prom_indices] = 0
-                        self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
-                
-                at_min_mask = current_mmrs <= config.min_mmr
-                loss_mask = results == -1
-                risk_mask = at_min_mask & loss_mask
-                
-                if config.demotion_lives > 0:
-                    safe_mask = results >= 0
-                    self.user_demotion_lives[indices[safe_mask]] = 0
-                    self.user_demotion_lives[indices[risk_mask]] += 1
-                    demote_ready = self.user_demotion_lives[indices] > config.demotion_lives
+                # MMR Type now uses Points driven by MMR change
+                if self.elo_config.calibration_enabled:
+                    cal_bonus = self.elo_config.calibration_k_bonus
+                    cal_count = self.elo_config.calibration_match_count
+                    is_cal = self.matches_played[indices] <= cal_count 
                     
-                    if t_idx > 0:
-                        dem_indices = indices[demote_ready]
-                        if len(dem_indices) > 0:
-                            self.user_tier_index[dem_indices] -= 1
-                            self.user_demotion_lives[dem_indices] = 0
-                            self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+                    # Reverse engineer raw change approximation
+                    points_change = np.where(is_cal, mmr_changes / cal_bonus, mmr_changes)
+                else:
+                    points_change = mmr_changes
+                    
+                # Apply Convergence Rate
+                points_change *= self.point_convergence_rate
+                
+            # Apply Points Change
+            self.user_ladder_points[indices] += points_change.astype(int)
+            
+            # --- Promotion Logic ---
+            # Determine Target Promotion Points based on MMR Range
+            target_points = np.full(len(indices), config.promotion_points)
+            
+            # Low MMR (Below Min)
+            low_mask = current_mmrs < config.min_mmr
+            target_points[low_mask] = config.promotion_points_low
+            
+            # High MMR (Above Max)
+            high_mask = current_mmrs >= config.max_mmr
+            target_points[high_mask] = config.promotion_points_high
+            
+            # Check Promotion
+            prom_mask = self.user_ladder_points[indices] >= target_points
+            
+            # Prevent promotion if this is the highest tier
+            if t_idx < len(self.tier_configs) - 1:
+                prom_indices = indices[prom_mask]
+                if len(prom_indices) > 0:
+                    self.user_tier_index[prom_indices] += 1
+                    self.user_ladder_points[prom_indices] = 0 # Reset points on entry
+                    
+                    # Reset Lives for new tier
+                    new_tier_config = self.tier_configs[t_idx + 1]
+                    self.user_demotion_lives[prom_indices] = new_tier_config.demotion_lives
+                    
+                    self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
+                    
+            # --- Demotion Logic (Lives) ---
+            if config.demotion_lives > 0:
+                # Only apply to those who didn't promote
+                not_promoted = ~prom_mask
+                
+                # Check Risk Zone (MMR < Min)
+                # User said: "해당 티어에 진입 했을 때 입력 된 값 만큼 패배를 했다면 강등"
+                # This implies purely loss count? Or only if MMR is low?
+                # "강등 방어(lives) 컬럼에 값이 0이면 강등이 없다고 보면 되고, 값이 있는 경우 해당 티어에 진입 했을 때 입력 된 값 만큼 패배를 했다면 강등"
+                # It doesn't explicitly mention MMR < Min.
+                # But usually "Demotion" implies you are failing.
+                # If I am 2000 MMR in a 1000 MMR tier, and I lose 3 times, should I demote? Probably not.
+                # But strictly following user text: "입력 된 값 만큼 패배를 했다면 강등".
+                # Let's assume standard logic: Demotion only triggers if you are "failing" (MMR < Min).
+                # Wait, "MMR Type... 해당 티어에 돌입 했을 때 강등 방어에 입력 된 값에 맞춰 해당 값 만큼 패배 한 경우 강등되도록 할 예정이야."
+                # It seems consistent.
+                # Let's add the MMR < Min check to be safe/standard, unless user complains.
+                # Actually, for "Ladder", MMR might be irrelevant?
+                # "Ladder 타입의 경우... 강등 방어(lives) 컬럼에 값이 0이면 강등이 없다고 보면 되고... 입력 된 값 만큼 패배를 했다면 강등"
+                # It sounds like a hard rule.
+                # But if I am "Super Champion" and I lose 3 games, I shouldn't drop if my MMR is huge?
+                # Let's stick to "Losses" for now as requested.
+                
+                loss_mask = results == -1
+                risk_indices_mask = loss_mask & not_promoted
+                
+                if risk_indices_mask.any():
+                    risk_indices = indices[risk_indices_mask]
+                    self.user_demotion_lives[risk_indices] -= 1
+                    
+                    demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                    
+                    if demote_mask.any() and t_idx > 0:
+                        dem_indices = risk_indices[demote_mask]
+                        self.user_tier_index[dem_indices] -= 1
+                        self.user_ladder_points[dem_indices] = 0
+                        
+                        # Reset Lives for lower tier
+                        lower_tier_config = self.tier_configs[t_idx - 1]
+                        self.user_demotion_lives[dem_indices] = lower_tier_config.demotion_lives
+                        
+                        self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
     def _assign_placement_tier(self, user_indices):
         current_mmr = self.mmr[user_indices]
@@ -906,7 +952,8 @@ class FastSimulation:
                     target_users = user_indices[in_range_mask]
                     self.user_tier_index[target_users] = t_idx
                     self.user_ladder_points[target_users] = 0
-                    self.user_demotion_lives[target_users] = 0
+                    # Initialize lives
+                    self.user_demotion_lives[target_users] = config.demotion_lives
 
     def _update_daily_tiers(self):
         for t_idx in range(len(self.tier_configs) - 1, 0, -1):

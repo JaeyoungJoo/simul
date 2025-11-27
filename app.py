@@ -367,7 +367,9 @@ else:
                                     promotion_points=t.get("promotion_points", 100),
                                     capacity=t.get("capacity", 0),
                                     placement_min_mmr=t.get("placement_min_mmr", t.get("min_mmr", 0)),
-                                    placement_max_mmr=t.get("placement_max_mmr", t.get("max_mmr", 0))
+                                    placement_max_mmr=t.get("placement_max_mmr", t.get("max_mmr", 0)),
+                                    promotion_points_low=t.get("promotion_points_low", t.get("promotion_points", 100)),
+                                    promotion_points_high=t.get("promotion_points_high", t.get("promotion_points", 100))
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
@@ -478,6 +480,9 @@ else:
             st.subheader("승리 유형별 가중치 (Decay)")
             st.session_state.decay_et = st.slider("연장승 가중치", 0.0, 1.0, st.session_state.get("decay_et", 0.8), help="연장전 승리 시 획득 점수 비율입니다 (1.0 = 정상 점수).")
             st.session_state.decay_pk = st.slider("승부차기승 가중치", 0.0, 1.0, st.session_state.get("decay_pk", 0.6), help="승부차기 승리 시 획득 점수 비율입니다.")
+            
+            st.subheader("랭크 포인트 수렴 (Rank Point Convergence)")
+            st.session_state.point_convergence_rate = st.slider("랭크 포인트 수렴 속도", 0.0, 1.0, st.session_state.get("point_convergence_rate", 0.5), help="MMR 변동이 랭크 포인트에 반영되는 비율입니다. (1.0 = 즉시 반영, 0.1 = 천천히 반영)")
 
             st.subheader("MMR 압축 보정 (Calibration)")
             st.subheader("MMR 압축 보정 (Calibration)")
@@ -516,7 +521,9 @@ else:
                     "promotion_points": t.promotion_points,
                     "capacity": t.capacity,
                     "placement_min_mmr": t.placement_min_mmr,
-                    "placement_max_mmr": t.placement_max_mmr
+                    "placement_max_mmr": t.placement_max_mmr,
+                    "promotion_points_low": t.promotion_points_low,
+                    "promotion_points_high": t.promotion_points_high
                 })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -531,7 +538,9 @@ else:
                     "demotion_lives": st.column_config.NumberColumn("강등 방어 (Lives)", help="강등 조건 도달 시 버틸 수 있는 패배 횟수 (0=즉시 강등)"),
                     "points_win": st.column_config.NumberColumn("승리 승점", help="Ladder: 승리 시 획득 포인트"),
                     "points_draw": st.column_config.NumberColumn("무승부 승점", help="Ladder: 무승부 시 획득 포인트"),
-                    "promotion_points": st.column_config.NumberColumn("승급 포인트", help="Ladder: 승급에 필요한 포인트"),
+                    "promotion_points": st.column_config.NumberColumn("승급 포인트 (Normal)", help="MMR 범위 내 승급 포인트"),
+                    "promotion_points_low": st.column_config.NumberColumn("승급 포인트 (Low)", help="MMR 범위 미만 승급 포인트"),
+                    "promotion_points_high": st.column_config.NumberColumn("승급 포인트 (High)", help="MMR 범위 초과 승급 포인트"),
                     "capacity": st.column_config.NumberColumn("정원 (Ratio)", help="Ratio: 상위 N명 (절대값)"),
                     "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정"),
                     "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정")
@@ -547,11 +556,13 @@ else:
                 "강등 방어 (Lives)": "demotion_lives", "승리 승점": "points_win", "무승부 승점": "points_draw",
                 "승급 포인트": "promotion_points", "정원 (Ratio)": "capacity",
                 "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
+                "승급 포인트 (Low)": "promotion_points_low", "승급 포인트 (High)": "promotion_points_high",
                 # English keys just in case
                 "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
                 "demotion_lives": "demotion_lives", "points_win": "points_win", "points_draw": "points_draw",
                 "promotion_points": "promotion_points", "capacity": "capacity",
-                "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr"
+                "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
+                "promotion_points_low": "promotion_points_low", "promotion_points_high": "promotion_points_high"
             }
             new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
             if new_tier_df is not None:
@@ -569,7 +580,9 @@ else:
                             promotion_points=int(row["promotion_points"]),
                             capacity=int(row["capacity"]),
                             placement_min_mmr=int(row.get("placement_min_mmr", 0)),
-                            placement_max_mmr=int(row.get("placement_max_mmr", 0))
+                            placement_max_mmr=int(row.get("placement_max_mmr", 0)),
+                            promotion_points_low=int(row.get("promotion_points_low", row["promotion_points"])),
+                            promotion_points_high=int(row.get("promotion_points_high", row["promotion_points"]))
                         ))
                     st.session_state.tier_config = bulk_tiers
                     st.rerun()
@@ -592,7 +605,9 @@ else:
                             promotion_points=int(row["promotion_points"]),
                             capacity=int(row["capacity"]),
                             placement_min_mmr=int(row["placement_min_mmr"]),
-                            placement_max_mmr=int(row["placement_max_mmr"])
+                            placement_max_mmr=int(row["placement_max_mmr"]),
+                            promotion_points_low=int(row["promotion_points_low"]),
+                            promotion_points_high=int(row["promotion_points_high"])
                         ))
                     except Exception as e:
                         st.error(f"티어 설정 저장 중 오류: {e}")
