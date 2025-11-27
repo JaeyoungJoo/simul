@@ -982,7 +982,7 @@ else:
                             "Goal Diff": log.goal_diff,
                             "Change": f"{log.mmr_change:+.1f}",
                             "New MMR": f"{log.current_mmr:.1f}",
-                            "Tier": sim.tier_configs[log.current_tier_index].name if sim.tier_configs and log.current_tier_index < len(sim.tier_configs) else "-",
+                            "Tier": "Unranked (배치)" if log.current_tier_index == -1 else (sim.tier_configs[log.current_tier_index].name if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs) else "-"),
                             "Ladder Points": log.current_ladder_points
                         })
                     
@@ -1010,11 +1010,18 @@ else:
                         
                         # Custom Y-axis ticks
                         tier_names = [t.name for t in sim.tier_configs]
+                        tick_vals = list(range(len(tier_names)))
+                        tick_text = tier_names
+                        
+                        # Add Unranked
+                        tick_vals.insert(0, -1)
+                        tick_text.insert(0, "Unranked")
+
                         fig_rank.update_layout(
                             yaxis=dict(
                                 tickmode='array',
-                                tickvals=list(range(len(tier_names))),
-                                ticktext=tier_names,
+                                tickvals=tick_vals,
+                                ticktext=tick_text,
                                 title="Tier"
                             ),
                             title="시간대별 티어 변화"
