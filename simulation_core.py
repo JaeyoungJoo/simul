@@ -30,6 +30,10 @@ class TierConfig:
     # Ratio specific
     capacity: int = 0 # Absolute number of users (e.g., 100)
 
+    # Placement specific
+    placement_min_mmr: int = 0
+    placement_max_mmr: int = 0
+
 
 @dataclass
 class MatchLog:
@@ -462,7 +466,12 @@ class FastSimulation:
         
         # Tier Tracking
         # 0 = Lowest Tier
-        self.user_tier_index = np.zeros(num_users, dtype=int)
+        # -1 = Unranked (Placement Matches)
+        if self.elo_config.placement_matches > 0:
+            self.user_tier_index = np.full(num_users, -1, dtype=int)
+        else:
+            self.user_tier_index = np.zeros(num_users, dtype=int)
+            
         self.user_ladder_points = np.zeros(num_users, dtype=int)
         self.user_demotion_lives = np.zeros(num_users, dtype=int) # Current consecutive losses or lives used
         
@@ -470,12 +479,11 @@ class FastSimulation:
         self.promotion_counts = {} # {tier_idx: count}
         self.demotion_counts = {} # {tier_idx: count}
         
-        # Initialize Tiers based on Initial MMR
-        if self.tier_configs:
+        # Initialize Tiers based on Initial MMR (Only if no placement matches)
+        if self.tier_configs and self.elo_config.placement_matches == 0:
             self._initialize_tiers()
 
         self.segment_indices = np.zeros(num_users, dtype=int)
-        self.seg_daily_prob = []
         self.seg_daily_prob = []
         self.seg_matches_min = []
         self.seg_matches_max = []
@@ -483,9 +491,9 @@ class FastSimulation:
         
         self.watched_indices = {}
         self.match_logs = {}
-        
+
     def initialize_users(self):
-        # Reset segment tracking lists to ensure they are lists (not numpy arrays from previous runs)
+        # Reset segment tracking lists
         self.seg_daily_prob = []
         self.seg_matches_min = []
         self.seg_matches_max = []
@@ -495,10 +503,9 @@ class FastSimulation:
         total_ratio = sum(s.ratio if not isinstance(s, dict) else s['ratio'] for s in self.segment_configs)
         
         if total_ratio <= 0:
-            total_ratio = 1.0 # Avoid division by zero
+            total_ratio = 1.0
         
         for i, config in enumerate(self.segment_configs):
-            # Handle both object and dict (defensive programming)
             if isinstance(config, dict):
                 ratio = config['ratio']
                 true_skill_min = config['true_skill_min']
@@ -530,7 +537,6 @@ class FastSimulation:
             self.seg_names.append(name)
             
             if count > 0:
-                # Select user closest to the mean True Skill for this segment (approx center of uniform)
                 segment_skills = self.true_skill[current_idx:current_idx+count]
                 target_skill = (true_skill_min + true_skill_max) / 2
                 closest_offset = np.abs(segment_skills - target_skill).argmin()
@@ -542,7 +548,6 @@ class FastSimulation:
             current_idx += count
             
         if current_idx < self.num_users:
-            # Handle default/fallback for remaining users
             config = self.segment_configs[0]
             if isinstance(config, dict):
                  ts_mean = (config['true_skill_min'] + config['true_skill_max']) / 2
@@ -557,28 +562,18 @@ class FastSimulation:
         self.seg_matches_max = np.array(self.seg_matches_max)
 
     def _initialize_tiers(self):
-        # Assign initial tiers based on MMR for MMR-type tiers
-        # For Ladder/Ratio, start at lowest or appropriate?
-        # Assuming bottom-up hierarchy.
-        # We'll just assign based on MMR ranges for now, but strictly speaking Ladder/Ratio might start empty or filled.
-        # For simplicity, we iterate and assign.
-        
         for i in range(self.num_users):
             mmr = self.mmr[i]
-            # Find highest matching MMR tier
             assigned_idx = 0
             for idx, config in enumerate(self.tier_configs):
                 if config.type == TierType.MMR:
                     if config.min_mmr <= mmr < config.max_mmr:
                         assigned_idx = idx
-                # If Ladder/Ratio, we might need specific logic. 
-                # For now, let's assume everyone starts at Bronze (0) or based on MMR if applicable.
             self.user_tier_index[i] = assigned_idx
 
     def run_day(self):
         self.day += 1
         
-        # 1. Determine Active Users
         rand_probs = np.random.rand(self.num_users)
         user_thresholds = self.seg_daily_prob[self.segment_indices]
         active_mask = rand_probs < user_thresholds
@@ -587,49 +582,31 @@ class FastSimulation:
         if len(active_indices) < 2:
             return
 
-        # 2. Determine Match Counts (Vectorized Probabilistic)
         mins = self.seg_matches_min[self.segment_indices[active_indices]]
         maxs = self.seg_matches_max[self.segment_indices[active_indices]]
         
-        # Generate random float counts between min and max
-        # uniform(low, high)
         raw_counts = np.random.uniform(mins, maxs)
-        
-        # Split into base (int) and probability (fraction)
         base_counts = np.floor(raw_counts).astype(int)
         extra_probs = raw_counts - base_counts
-        
-        # Determine extra matches
         extra_matches = (np.random.rand(len(active_indices)) < extra_probs).astype(int)
         
         counts = base_counts + extra_matches
         counts = np.maximum(1, counts)
         
-        # Global matches remaining array
         matches_remaining = np.zeros(self.num_users, dtype=int)
         matches_remaining[active_indices] = counts
         
-        # 3. Match Loop
         while True:
-            # Identify candidates for this round
             candidates_mask = matches_remaining > 0
-            # Optimization: if too few, break
             if np.sum(candidates_mask) < 2:
                 break
                 
             candidate_indices = self.ids[candidates_mask]
-            
-            # Sort by MMR (or True Skill if Calibration) for matchmaking with Jitter
-            # Add noise to MMR before sorting to simulate imperfect search
             candidate_mmrs = self.mmr[candidate_indices]
             
-            # Calibration Logic: If enabled and matches < count, use True Skill
-            # Calibration Logic: If enabled and matches < count, use True Skill
             if self.elo_config.calibration_enabled:
                 candidate_matches = self.matches_played[candidate_indices]
                 candidate_true_skill = self.true_skill[candidate_indices]
-                
-                # Use True Skill where matches < limit, else MMR
                 cal_mask = candidate_matches < self.elo_config.calibration_match_count
                 sort_values = np.where(cal_mask, candidate_true_skill, candidate_mmrs)
             else:
@@ -643,25 +620,20 @@ class FastSimulation:
             
             n_candidates = len(sorted_candidates)
             if n_candidates % 2 != 0:
-                # Drop the last one
                 sorted_candidates = sorted_candidates[:-1]
                 
             idx_a = sorted_candidates[0::2]
             idx_b = sorted_candidates[1::2]
             
-            # Process Matches
             self._process_matches(idx_a, idx_b)
             
-            # Decrement
             matches_remaining[idx_a] -= 1
             matches_remaining[idx_b] -= 1
             
-        # 4. Daily Tier Updates (Ratio Tiers)
         if self.tier_configs:
             self._update_daily_tiers()
 
     def _process_matches(self, idx_a, idx_b):
-        # --- Vectorized Match Logic ---
         ra = self.mmr[idx_a]
         rb = self.mmr[idx_b]
         ts_a = self.true_skill[idx_a]
@@ -670,88 +642,65 @@ class FastSimulation:
         prob_a_win = 1 / (1 + 10 ** ((ts_b - ts_a) / 400))
         rands = np.random.rand(len(idx_a))
         
-        # 1. Base Outcome (Regular Time)
         draw_prob = self.match_config.draw_prob
         is_draw_reg = rands < draw_prob
         
-        # 2. Extra Time / PK Logic (Vectorized approximation)
         rands_et = np.random.rand(len(idx_a))
-        
-        # Masks
         goes_to_et = is_draw_reg & (rands_et < self.match_config.prob_extra_time)
         goes_to_pk = goes_to_et & (np.random.rand(len(idx_a)) < self.match_config.prob_pk)
         
-        # Final Outcomes
         rem_prob = 1.0 - draw_prob
         adj_win = prob_a_win * rem_prob
         
         win_reg = (rands >= draw_prob) & (rands < (draw_prob + adj_win))
         loss_reg = rands >= (draw_prob + adj_win)
         
-        # ET/PK Wins
         et_win_a = goes_to_et & ~goes_to_pk & (np.random.rand(len(idx_a)) < prob_a_win)
         et_loss_a = goes_to_et & ~goes_to_pk & ~et_win_a
         
         pk_win_a = goes_to_pk & (np.random.rand(len(idx_a)) < 0.5)
         pk_loss_a = goes_to_pk & ~pk_win_a
         
-        # Consolidate
         final_win_a = win_reg | et_win_a | pk_win_a
         final_loss_a = loss_reg | et_loss_a | pk_loss_a
-        final_draw = is_draw_reg & ~goes_to_et # True Draw (no ET)
+        final_draw = is_draw_reg & ~goes_to_et
         
-        # Result Types
         res_type = np.full(len(idx_a), 'Regular', dtype=object)
         res_type[goes_to_et] = 'Extra'
         res_type[goes_to_pk] = 'PK'
         
-        # Scores
         scores_a = np.zeros(len(idx_a))
         scores_a[final_win_a] = 1.0
         scores_a[final_draw] = 0.5
         scores_a[final_loss_a] = 0.0
         
-        # Goal Diff
         skill_diff = (ts_a - ts_b) / 100.0
         base_diff = np.abs(np.random.normal(skill_diff, 1.0))
         goal_diff = np.clip(base_diff, 1, self.match_config.max_goal_diff)
         goal_diff[final_draw] = 0
         
-        # --- ELO Calculation ---
-        # Calculate Expected Scores (Vectorized)
-        # Asymmetric Pricing for Calibration
-        
-        # For A: If A is calibrating, use B's True Skill. Else B's MMR.
         cal_mask_a = self.matches_played[idx_a] < self.elo_config.calibration_match_count
         rating_b_for_a = np.where(self.elo_config.calibration_enabled & cal_mask_a, 
                                   self.true_skill[idx_b], self.mmr[idx_b])
         expected_a = 1 / (1 + 10 ** ((rating_b_for_a - self.mmr[idx_a]) / 400))
         
-        # For B: If B is calibrating, use A's True Skill. Else A's MMR.
         cal_mask_b = self.matches_played[idx_b] < self.elo_config.calibration_match_count
         rating_a_for_b = np.where(self.elo_config.calibration_enabled & cal_mask_b, 
                                   self.true_skill[idx_a], self.mmr[idx_a])
         expected_b = 1 / (1 + 10 ** ((rating_a_for_b - self.mmr[idx_b]) / 400))
 
-        # Uncertainty Correction
         if self.elo_config.uncertainty_factor != 1.0:
             expected_a = 0.5 + (expected_a - 0.5) * self.elo_config.uncertainty_factor
             expected_b = 0.5 + (expected_b - 0.5) * self.elo_config.uncertainty_factor
 
-        # Calculate K-Factors (Vectorized)
         def get_k(matches, streak):
             k = np.full(len(matches), self.elo_config.base_k, dtype=float)
-            # Placement
             place_mask = matches < self.elo_config.placement_matches
             k[place_mask] *= self.elo_config.placement_bonus
             
-            # Calibration Bonus (Handled later for directional)
-
-            # Streak (Tiered Vectorized)
             streak_abs = np.abs(streak)
             streak_bonus = np.zeros(len(matches))
             
-            # Iterate rules (sorted by min_streak)
             sorted_rules = sorted(self.elo_config.streak_rules, key=lambda x: x['min_streak'])
             for rule in sorted_rules:
                 mask = streak_abs >= rule['min_streak']
@@ -763,7 +712,6 @@ class FastSimulation:
         k_a = get_k(self.matches_played[idx_a], self.streak[idx_a])
         k_b = get_k(self.matches_played[idx_b], self.streak[idx_b])
         
-        # Goal Diff Bonus (Tiered Vectorized)
         goal_diff_bonus = np.zeros(len(idx_a))
         sorted_gd_rules = sorted(self.elo_config.goal_diff_rules, key=lambda x: x['min_diff'])
         
@@ -781,21 +729,15 @@ class FastSimulation:
         final_k_a = k_a * type_mult
         final_k_b = k_b * type_mult
         
-        # --- Smart Calibration (Vectorized) ---
         if self.elo_config.calibration_enabled:
-            # Calculate Deltas
             delta_a = scores_a - expected_a
             delta_b = (1 - scores_a) - expected_b
             
-            # Check Directions
-            # A
             target_dir_a = np.sign(self.true_skill[idx_a] - self.mmr[idx_a])
             move_dir_a = np.sign(delta_a)
-            # Apply bonus if directions match (and not zero)
             apply_a = cal_mask_a & (target_dir_a != 0) & (move_dir_a == target_dir_a)
             final_k_a[apply_a] *= self.elo_config.calibration_k_bonus
             
-            # B
             target_dir_b = np.sign(self.true_skill[idx_b] - self.mmr[idx_b])
             move_dir_b = np.sign(delta_b)
             apply_b = cal_mask_b & (target_dir_b != 0) & (move_dir_b == target_dir_b)
@@ -804,11 +746,9 @@ class FastSimulation:
         new_ra = ra + final_k_a * (scores_a - expected_a)
         new_rb = rb + final_k_b * ((1 - scores_a) - expected_b)
         
-        # Apply updates
         self.mmr[idx_a] = new_ra
         self.mmr[idx_b] = new_rb
         
-        # Update Stats
         self.matches_played[idx_a] += 1
         self.matches_played[idx_b] += 1
         
@@ -821,25 +761,19 @@ class FastSimulation:
         self.draws[idx_a[final_draw]] += 1
         self.draws[idx_b[final_draw]] += 1
         
-        # Update Streaks
-        # Win A
         mask_win = final_win_a
         self.streak[idx_a[mask_win]] = np.where(self.streak[idx_a[mask_win]] > 0, self.streak[idx_a[mask_win]] + 1, 1)
         self.streak[idx_b[mask_win]] = np.where(self.streak[idx_b[mask_win]] < 0, self.streak[idx_b[mask_win]] - 1, -1)
         
-        # Loss A
         mask_loss = final_loss_a
         self.streak[idx_a[mask_loss]] = np.where(self.streak[idx_a[mask_loss]] < 0, self.streak[idx_a[mask_loss]] - 1, -1)
         self.streak[idx_b[mask_loss]] = np.where(self.streak[idx_b[mask_loss]] > 0, self.streak[idx_b[mask_loss]] + 1, 1)
         
-        # Draw
         mask_draw = final_draw
         self.streak[idx_a[mask_draw]] = 0
         self.streak[idx_b[mask_draw]] = 0
         
-        # Logging
         for w_id in self.watched_indices:
-            # Check A
             loc_a = np.where(idx_a == w_id)[0]
             if len(loc_a) > 0:
                 i = loc_a[0]
@@ -853,7 +787,6 @@ class FastSimulation:
                     current_tier_index=self.user_tier_index[idx_a[i]],
                     current_ladder_points=self.user_ladder_points[idx_a[i]]
                 ))
-            # Check B
             loc_b = np.where(idx_b == w_id)[0]
             if len(loc_b) > 0:
                 i = loc_b[0]
@@ -868,67 +801,56 @@ class FastSimulation:
                     current_ladder_points=self.user_ladder_points[idx_b[i]]
                 ))
 
-        # --- Tier Logic Updates (Immediate) ---
         if self.tier_configs:
             self._process_tier_updates(idx_a, idx_b, final_win_a, final_draw, final_loss_a)
 
     def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a):
-        # Combine indices and results for unified processing
         all_idx = np.concatenate([idx_a, idx_b])
-        # Result: 1=Win, 0=Draw, -1=Loss
-        # A's results
         res_a = np.zeros(len(idx_a), dtype=int)
         res_a[win_a] = 1
         res_a[loss_a] = -1
         
-        # B's results (Opposite)
         res_b = np.zeros(len(idx_b), dtype=int)
-        res_b[win_a] = -1 # A won -> B lost
-        res_b[loss_a] = 1 # A lost -> B won
+        res_b[win_a] = -1
+        res_b[loss_a] = 1
         
         all_res = np.concatenate([res_a, res_b])
         
-        # Current Tiers
+        # Placement Logic
+        if self.elo_config.placement_matches > 0:
+            just_finished_mask = (self.matches_played[all_idx] == self.elo_config.placement_matches)
+            if just_finished_mask.any():
+                finished_indices = all_idx[just_finished_mask]
+                self._assign_placement_tier(finished_indices)
+
         current_tiers = self.user_tier_index[all_idx]
-        
-        # Iterate unique tiers involved to vectorize processing by tier type
         unique_tiers = np.unique(current_tiers)
         
         for t_idx in unique_tiers:
+            if t_idx == -1: continue # Skip unranked
             if t_idx >= len(self.tier_configs): continue
             
             config = self.tier_configs[t_idx]
             mask = current_tiers == t_idx
             indices = all_idx[mask]
-            results = all_res[mask] # 1, 0, -1
+            results = all_res[mask]
             
             if config.type == TierType.LADDER:
-                # Ladder Logic
-                # Win/Draw -> Points
                 points_change = np.zeros(len(indices), dtype=int)
                 points_change[results == 1] = config.points_win
                 points_change[results == 0] = config.points_draw
                 
                 self.user_ladder_points[indices] += points_change
                 
-                # Promotion
                 prom_mask = self.user_ladder_points[indices] >= config.promotion_points
-                # Promote if not last tier
                 if t_idx < len(self.tier_configs) - 1:
                     prom_indices = indices[prom_mask]
                     if len(prom_indices) > 0:
                         self.user_tier_index[prom_indices] += 1
                         self.user_ladder_points[prom_indices] = 0
                         self.user_demotion_lives[prom_indices] = 0
-                        # Track
                         self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
                 
-                # Demotion (Losses)
-                
-                # Demotion (Losses)
-                # Reset lives on Win/Draw? Or just count losses?
-                # "패배 관련 컬럼... 몇번 패배 했을 때 강등" -> Usually consecutive or cumulative without reset?
-                # Assuming Consecutive for "Lives" feel.
                 reset_mask = results >= 0
                 self.user_demotion_lives[indices[reset_mask]] = 0
                 
@@ -937,21 +859,15 @@ class FastSimulation:
                     self.user_demotion_lives[indices[loss_mask]] += 1
                     demote_mask = self.user_demotion_lives[indices] >= config.demotion_lives
                     
-                    # Demote if not first tier
                     if t_idx > 0:
                         dem_indices = indices[demote_mask]
                         if len(dem_indices) > 0:
                             self.user_tier_index[dem_indices] -= 1
-                            self.user_ladder_points[dem_indices] = 0 # Reset points in new tier?
+                            self.user_ladder_points[dem_indices] = 0
                             self.user_demotion_lives[dem_indices] = 0
-                            # Track
                             self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
             
             elif config.type == TierType.MMR:
-                # MMR Logic
-                # Promotion: Reached Max MMR? 
-                # "최고 점수에 도달하면 다음 등급에 승급"
-                # Check MMR > Max
                 current_mmrs = self.mmr[indices]
                 prom_mask = current_mmrs >= config.max_mmr
                 if t_idx < len(self.tier_configs) - 1:
@@ -959,66 +875,37 @@ class FastSimulation:
                     if len(prom_indices) > 0:
                         self.user_tier_index[prom_indices] += 1
                         self.user_demotion_lives[prom_indices] = 0
-                        # Track
                         self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
                 
-                # Demotion
-                # "최저 점수에 도달한 상태에서... 1판 이상 추가 패배 시"
-                # Condition: MMR <= Min AND Result == Loss
-                # If lives > 0: Check lives.
-                
-                # First, check if at Min (or below)
                 at_min_mask = current_mmrs <= config.min_mmr
                 loss_mask = results == -1
-                
                 risk_mask = at_min_mask & loss_mask
                 
                 if config.demotion_lives > 0:
-                    # Increment lives used
-                    # Reset lives if not at min? Or if Win?
-                    # "최저 점수에 도달한 상태에서" implies state.
-                    # If I win, I might go above Min, so I'm safe.
-                    # If I am at Min and Win, I am safe.
-                    # So reset if not (At Min AND Loss)? Or reset if Win?
-                    # Usually reset on Win.
                     safe_mask = results >= 0
                     self.user_demotion_lives[indices[safe_mask]] = 0
-                    
-                    # Increment for risk
                     self.user_demotion_lives[indices[risk_mask]] += 1
-                    
-                    demote_ready = self.user_demotion_lives[indices] > config.demotion_lives # "1판 이상 추가 패배 시" -> If lives=1, then 2nd loss demotes?
-                    # "값이 1 이상 있는 경우 1판 이상 추가 패배 시"
-                    # If lives=1. I am at Min. Lose 1. Lives=1. Lose 2. Demote?
-                    # Or "Lives" = "Allowed Losses".
-                    # Let's assume demotion_lives is the Threshold.
+                    demote_ready = self.user_demotion_lives[indices] > config.demotion_lives
                     
                     if t_idx > 0:
                         dem_indices = indices[demote_ready]
                         if len(dem_indices) > 0:
                             self.user_tier_index[dem_indices] -= 1
                             self.user_demotion_lives[dem_indices] = 0
-                            # Track
                             self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
-                
-            # Ratio Logic is handled daily, not per match
-            
+
+    def _assign_placement_tier(self, user_indices):
+        current_mmr = self.mmr[user_indices]
+        for t_idx, config in enumerate(self.tier_configs):
+            if config.placement_max_mmr > 0:
+                in_range_mask = (current_mmr >= config.placement_min_mmr) & (current_mmr < config.placement_max_mmr)
+                if in_range_mask.any():
+                    target_users = user_indices[in_range_mask]
+                    self.user_tier_index[target_users] = t_idx
+                    self.user_ladder_points[target_users] = 0
+                    self.user_demotion_lives[target_users] = 0
+
     def _update_daily_tiers(self):
-        # Handle Ratio Tiers (Top N)
-        # Iterate from Top Tier downwards
-        # If Tier is Ratio:
-        #   Select Top N users by MMR (from all users? or just candidates?)
-        #   "비율로 설정되기 바로 이전 등급의 유저 중 입력 된 절대값에 맞게 승급"
-        #   This implies promotion from lower tier.
-        #   "만약 MMR로 설정된 티어가 챌린저이고, 챔피언이 비율 타입... 챌린저에 있는 유저 중 100명만 챔피언"
-        #   So: Candidates = Users in (Target Tier OR Lower Tier).
-        #   Sort by MMR. Top N -> Target Tier. Rest -> Lower Tier.
-        
-        # We need to process from Top to Bottom to ensure correct cascading?
-        # Actually, "Super Champion" (Top 10) takes from "Champion".
-        # "Champion" (Top 100) takes from "Challenger".
-        # So we should process Top-down.
-        
         for t_idx in range(len(self.tier_configs) - 1, 0, -1):
             config = self.tier_configs[t_idx]
             prev_config = self.tier_configs[t_idx - 1]
