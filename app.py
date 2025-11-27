@@ -998,12 +998,13 @@ else:
                         fig_rank = go.Figure()
                         
                         # Extract history
-                        days = [l.day for l in logs]
+                        # Use match_count if available, else fallback to day (for legacy logs)
+                        x_vals = [getattr(l, 'match_count', l.day) for l in logs]
                         tier_indices = [l.current_tier_index for l in logs]
                         points = [l.current_ladder_points for l in logs]
                         
                         # Primary Y: Tier
-                        fig_rank.add_trace(go.Scatter(x=days, y=tier_indices, name="Tier Level", mode='lines+markers', line=dict(shape='hv')))
+                        fig_rank.add_trace(go.Scatter(x=x_vals, y=tier_indices, name="Tier Level", mode='lines+markers', line=dict(shape='hv')))
                         
                         # Secondary Y: Points (Optional, maybe too cluttered? Let's just show Tier for now)
                         # Or show points as hover text
@@ -1024,7 +1025,8 @@ else:
                                 ticktext=tick_text,
                                 title="Tier"
                             ),
-                            title="시간대별 티어 변화"
+                            xaxis=dict(title="Match Count"),
+                            title="매치 수별 티어 변화"
                         )
                         st.plotly_chart(fig_rank, use_container_width=True)
                 else:

@@ -49,6 +49,7 @@ class MatchLog:
     current_mmr: float
     current_tier_index: int = 0
     current_ladder_points: int = 0
+    match_count: int = 0
 
 @dataclass
 class SegmentConfig:
@@ -785,7 +786,8 @@ class FastSimulation:
                     result=res, result_type=res_type[i], goal_diff=int(goal_diff[i]),
                     mmr_change=change, current_mmr=new_ra[i],
                     current_tier_index=self.user_tier_index[idx_a[i]],
-                    current_ladder_points=self.user_ladder_points[idx_a[i]]
+                    current_ladder_points=self.user_ladder_points[idx_a[i]],
+                    match_count=self.matches_played[idx_a[i]]
                 ))
             loc_b = np.where(idx_b == w_id)[0]
             if len(loc_b) > 0:
@@ -798,7 +800,8 @@ class FastSimulation:
                     result=res, result_type=res_type[i], goal_diff=int(goal_diff[i]),
                     mmr_change=change, current_mmr=new_rb[i],
                     current_tier_index=self.user_tier_index[idx_b[i]],
-                    current_ladder_points=self.user_ladder_points[idx_b[i]]
+                    current_ladder_points=self.user_ladder_points[idx_b[i]],
+                    match_count=self.matches_played[idx_b[i]]
                 ))
 
         if self.tier_configs:
