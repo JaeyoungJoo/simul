@@ -1182,7 +1182,7 @@ else:
             
             # Display Table
             st.dataframe(
-                df_div.style.background_gradient(subset=["_divergence_val"], cmap="RdYlGn", vmin=-500, vmax=500),
+                df_div,
                 column_config={
                     "_divergence_val": None # Hide helper column
                 },
