@@ -4,8 +4,32 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
 
-CORE_VERSION = "1.2 (Calibration Added)"
+CORE_VERSION = "1.3 (Rank System Overhaul)"
 print(f"Simulation Core Loaded: Version {CORE_VERSION}")
+
+class TierType(Enum):
+    MMR = "MMR"
+    LADDER = "Ladder"
+    RATIO = "Ratio"
+
+@dataclass
+class TierConfig:
+    name: str
+    type: TierType
+    # MMR specific
+    min_mmr: int = 0
+    max_mmr: int = 9999
+    demotion_mmr: int = 0 # Not used directly, logic uses min_mmr
+    demotion_lives: int = 0 # 0 = No demotion
+    
+    # Ladder specific
+    points_win: int = 0
+    points_draw: int = 0
+    promotion_points: int = 100
+    
+    # Ratio specific
+    capacity: int = 0 # Absolute number of users (e.g., 100)
+
 
 @dataclass
 class MatchLog:
@@ -19,6 +43,8 @@ class MatchLog:
     goal_diff: int
     mmr_change: float
     current_mmr: float
+    current_tier_index: int = 0
+    current_ladder_points: int = 0
 
 @dataclass
 class SegmentConfig:
@@ -414,12 +440,15 @@ class Simulation:
 
 class FastSimulation:
     def __init__(self, num_users: int, segment_configs: List[SegmentConfig],
-                 elo_config: ELOConfig, match_config: MatchConfig, initial_mmr: float = 1000.0):
+                 elo_config: ELOConfig, match_config: MatchConfig, 
+                 tier_configs: List[TierConfig] = None,
+                 initial_mmr: float = 1000.0):
         self.num_users = num_users
         self.elo_config = elo_config
         self.match_config = match_config
         self.initial_mmr = initial_mmr
         self.segment_configs = segment_configs
+        self.tier_configs = tier_configs if tier_configs else []
         self.day = 0
         
         self.ids = np.arange(num_users)
@@ -429,8 +458,22 @@ class FastSimulation:
         self.losses = np.zeros(num_users, dtype=int)
         self.draws = np.zeros(num_users, dtype=int)
         self.matches_played = np.zeros(num_users, dtype=int)
-        self.streak = np.zeros(num_users, dtype=int) # NEW: Streak array
+        self.streak = np.zeros(num_users, dtype=int)
         
+        # Tier Tracking
+        # 0 = Lowest Tier
+        self.user_tier_index = np.zeros(num_users, dtype=int)
+        self.user_ladder_points = np.zeros(num_users, dtype=int)
+        self.user_demotion_lives = np.zeros(num_users, dtype=int) # Current consecutive losses or lives used
+        
+        # Stats Tracking
+        self.promotion_counts = {} # {tier_idx: count}
+        self.demotion_counts = {} # {tier_idx: count}
+        
+        # Initialize Tiers based on Initial MMR
+        if self.tier_configs:
+            self._initialize_tiers()
+
         self.segment_indices = np.zeros(num_users, dtype=int)
         self.seg_daily_prob = []
         self.seg_daily_prob = []
@@ -513,6 +556,25 @@ class FastSimulation:
         self.seg_matches_min = np.array(self.seg_matches_min)
         self.seg_matches_max = np.array(self.seg_matches_max)
 
+    def _initialize_tiers(self):
+        # Assign initial tiers based on MMR for MMR-type tiers
+        # For Ladder/Ratio, start at lowest or appropriate?
+        # Assuming bottom-up hierarchy.
+        # We'll just assign based on MMR ranges for now, but strictly speaking Ladder/Ratio might start empty or filled.
+        # For simplicity, we iterate and assign.
+        
+        for i in range(self.num_users):
+            mmr = self.mmr[i]
+            # Find highest matching MMR tier
+            assigned_idx = 0
+            for idx, config in enumerate(self.tier_configs):
+                if config.type == TierType.MMR:
+                    if config.min_mmr <= mmr < config.max_mmr:
+                        assigned_idx = idx
+                # If Ladder/Ratio, we might need specific logic. 
+                # For now, let's assume everyone starts at Bronze (0) or based on MMR if applicable.
+            self.user_tier_index[i] = assigned_idx
+
     def run_day(self):
         self.day += 1
         
@@ -593,6 +655,10 @@ class FastSimulation:
             # Decrement
             matches_remaining[idx_a] -= 1
             matches_remaining[idx_b] -= 1
+            
+        # 4. Daily Tier Updates (Ratio Tiers)
+        if self.tier_configs:
+            self._update_daily_tiers()
 
     def _process_matches(self, idx_a, idx_b):
         # --- Vectorized Match Logic ---
@@ -783,7 +849,9 @@ class FastSimulation:
                     day=self.day, hour=12, opponent_id=int(idx_b[i]), opponent_mmr=rb[i],
                     opponent_true_skill=ts_b[i],
                     result=res, result_type=res_type[i], goal_diff=int(goal_diff[i]),
-                    mmr_change=change, current_mmr=new_ra[i]
+                    mmr_change=change, current_mmr=new_ra[i],
+                    current_tier_index=self.user_tier_index[idx_a[i]],
+                    current_ladder_points=self.user_ladder_points[idx_a[i]]
                 ))
             # Check B
             loc_b = np.where(idx_b == w_id)[0]
@@ -795,8 +863,202 @@ class FastSimulation:
                     day=self.day, hour=12, opponent_id=int(idx_a[i]), opponent_mmr=ra[i],
                     opponent_true_skill=ts_a[i],
                     result=res, result_type=res_type[i], goal_diff=int(goal_diff[i]),
-                    mmr_change=change, current_mmr=new_rb[i]
+                    mmr_change=change, current_mmr=new_rb[i],
+                    current_tier_index=self.user_tier_index[idx_b[i]],
+                    current_ladder_points=self.user_ladder_points[idx_b[i]]
                 ))
+
+        # --- Tier Logic Updates (Immediate) ---
+        if self.tier_configs:
+            self._process_tier_updates(idx_a, idx_b, final_win_a, final_draw, final_loss_a)
+
+    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a):
+        # Combine indices and results for unified processing
+        all_idx = np.concatenate([idx_a, idx_b])
+        # Result: 1=Win, 0=Draw, -1=Loss
+        # A's results
+        res_a = np.zeros(len(idx_a), dtype=int)
+        res_a[win_a] = 1
+        res_a[loss_a] = -1
+        
+        # B's results (Opposite)
+        res_b = np.zeros(len(idx_b), dtype=int)
+        res_b[win_a] = -1 # A won -> B lost
+        res_b[loss_a] = 1 # A lost -> B won
+        
+        all_res = np.concatenate([res_a, res_b])
+        
+        # Current Tiers
+        current_tiers = self.user_tier_index[all_idx]
+        
+        # Iterate unique tiers involved to vectorize processing by tier type
+        unique_tiers = np.unique(current_tiers)
+        
+        for t_idx in unique_tiers:
+            if t_idx >= len(self.tier_configs): continue
+            
+            config = self.tier_configs[t_idx]
+            mask = current_tiers == t_idx
+            indices = all_idx[mask]
+            results = all_res[mask] # 1, 0, -1
+            
+            if config.type == TierType.LADDER:
+                # Ladder Logic
+                # Win/Draw -> Points
+                points_change = np.zeros(len(indices), dtype=int)
+                points_change[results == 1] = config.points_win
+                points_change[results == 0] = config.points_draw
+                
+                self.user_ladder_points[indices] += points_change
+                
+                # Promotion
+                prom_mask = self.user_ladder_points[indices] >= config.promotion_points
+                # Promote if not last tier
+                if t_idx < len(self.tier_configs) - 1:
+                    prom_indices = indices[prom_mask]
+                    if len(prom_indices) > 0:
+                        self.user_tier_index[prom_indices] += 1
+                        self.user_ladder_points[prom_indices] = 0
+                        self.user_demotion_lives[prom_indices] = 0
+                        # Track
+                        self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
+                
+                # Demotion (Losses)
+                
+                # Demotion (Losses)
+                # Reset lives on Win/Draw? Or just count losses?
+                # "패배 관련 컬럼... 몇번 패배 했을 때 강등" -> Usually consecutive or cumulative without reset?
+                # Assuming Consecutive for "Lives" feel.
+                reset_mask = results >= 0
+                self.user_demotion_lives[indices[reset_mask]] = 0
+                
+                loss_mask = results == -1
+                if config.demotion_lives > 0:
+                    self.user_demotion_lives[indices[loss_mask]] += 1
+                    demote_mask = self.user_demotion_lives[indices] >= config.demotion_lives
+                    
+                    # Demote if not first tier
+                    if t_idx > 0:
+                        dem_indices = indices[demote_mask]
+                        if len(dem_indices) > 0:
+                            self.user_tier_index[dem_indices] -= 1
+                            self.user_ladder_points[dem_indices] = 0 # Reset points in new tier?
+                            self.user_demotion_lives[dem_indices] = 0
+                            # Track
+                            self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+            
+            elif config.type == TierType.MMR:
+                # MMR Logic
+                # Promotion: Reached Max MMR? 
+                # "최고 점수에 도달하면 다음 등급에 승급"
+                # Check MMR > Max
+                current_mmrs = self.mmr[indices]
+                prom_mask = current_mmrs >= config.max_mmr
+                if t_idx < len(self.tier_configs) - 1:
+                    prom_indices = indices[prom_mask]
+                    if len(prom_indices) > 0:
+                        self.user_tier_index[prom_indices] += 1
+                        self.user_demotion_lives[prom_indices] = 0
+                        # Track
+                        self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
+                
+                # Demotion
+                # "최저 점수에 도달한 상태에서... 1판 이상 추가 패배 시"
+                # Condition: MMR <= Min AND Result == Loss
+                # If lives > 0: Check lives.
+                
+                # First, check if at Min (or below)
+                at_min_mask = current_mmrs <= config.min_mmr
+                loss_mask = results == -1
+                
+                risk_mask = at_min_mask & loss_mask
+                
+                if config.demotion_lives > 0:
+                    # Increment lives used
+                    # Reset lives if not at min? Or if Win?
+                    # "최저 점수에 도달한 상태에서" implies state.
+                    # If I win, I might go above Min, so I'm safe.
+                    # If I am at Min and Win, I am safe.
+                    # So reset if not (At Min AND Loss)? Or reset if Win?
+                    # Usually reset on Win.
+                    safe_mask = results >= 0
+                    self.user_demotion_lives[indices[safe_mask]] = 0
+                    
+                    # Increment for risk
+                    self.user_demotion_lives[indices[risk_mask]] += 1
+                    
+                    demote_ready = self.user_demotion_lives[indices] > config.demotion_lives # "1판 이상 추가 패배 시" -> If lives=1, then 2nd loss demotes?
+                    # "값이 1 이상 있는 경우 1판 이상 추가 패배 시"
+                    # If lives=1. I am at Min. Lose 1. Lives=1. Lose 2. Demote?
+                    # Or "Lives" = "Allowed Losses".
+                    # Let's assume demotion_lives is the Threshold.
+                    
+                    if t_idx > 0:
+                        dem_indices = indices[demote_ready]
+                        if len(dem_indices) > 0:
+                            self.user_tier_index[dem_indices] -= 1
+                            self.user_demotion_lives[dem_indices] = 0
+                            # Track
+                            self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+                
+            # Ratio Logic is handled daily, not per match
+            
+    def _update_daily_tiers(self):
+        # Handle Ratio Tiers (Top N)
+        # Iterate from Top Tier downwards
+        # If Tier is Ratio:
+        #   Select Top N users by MMR (from all users? or just candidates?)
+        #   "비율로 설정되기 바로 이전 등급의 유저 중 입력 된 절대값에 맞게 승급"
+        #   This implies promotion from lower tier.
+        #   "만약 MMR로 설정된 티어가 챌린저이고, 챔피언이 비율 타입... 챌린저에 있는 유저 중 100명만 챔피언"
+        #   So: Candidates = Users in (Target Tier OR Lower Tier).
+        #   Sort by MMR. Top N -> Target Tier. Rest -> Lower Tier.
+        
+        # We need to process from Top to Bottom to ensure correct cascading?
+        # Actually, "Super Champion" (Top 10) takes from "Champion".
+        # "Champion" (Top 100) takes from "Challenger".
+        # So we should process Top-down.
+        
+        for t_idx in range(len(self.tier_configs) - 1, 0, -1):
+            config = self.tier_configs[t_idx]
+            prev_config = self.tier_configs[t_idx - 1]
+            
+            if config.type == TierType.RATIO:
+                # Candidates: Users currently in This Tier OR Previous Tier
+                # Actually, strictly "Previous Tier" users are candidates.
+                # But users already in This Tier are also candidates to stay.
+                
+                target_mask = (self.user_tier_index == t_idx) | (self.user_tier_index == t_idx - 1)
+                candidate_indices = self.ids[target_mask]
+                
+                if len(candidate_indices) == 0:
+                    continue
+                    
+                # Sort by MMR (Descending)
+                # Add tie-breaker? (e.g. ID)
+                candidate_mmrs = self.mmr[candidate_indices]
+                # Negative for descending sort
+                sorted_args = np.argsort(-candidate_mmrs)
+                sorted_candidates = candidate_indices[sorted_args]
+                
+                # Cutoff
+                capacity = int(config.capacity)
+                if capacity > len(sorted_candidates):
+                    capacity = len(sorted_candidates)
+                    
+                promoted = sorted_candidates[:capacity]
+                demoted = sorted_candidates[capacity:]
+                
+                # Apply
+                self.user_tier_index[promoted] = t_idx
+                self.user_tier_index[demoted] = t_idx - 1
+                
+                # Track (Approximate, since we don't know who moved exactly without diff)
+                # But we can assume new entrants are promotions?
+                # Actually, Ratio is tricky. Let's skip tracking for Ratio for now or do it properly later.
+                # Or just count total in tier.
+
+
 
     def get_stats(self):
         return {

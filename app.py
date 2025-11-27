@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig, MatchConfig, CORE_VERSION
+from simulation_core import Simulation, FastSimulation, SegmentConfig, ELOConfig, MatchConfig, TierConfig, TierType, CORE_VERSION
 import json
 import os
 from streamlit_gsheets import GSheetsConnection
@@ -73,8 +73,20 @@ def save_config():
         "calibration_k_bonus": st.session_state.get("calibration_k_bonus", 2.0),
         "calibration_enabled": st.session_state.get("calibration_enabled", False),
         "calibration_match_count": st.session_state.get("calibration_match_count", 10),
-        # Tier Config
-        "tier_config": st.session_state.get("tier_config", []),
+        # Tier Config (Serialize)
+        "tier_config": [
+            {
+                "name": t.name,
+                "type": t.type.value,
+                "min_mmr": t.min_mmr,
+                "max_mmr": t.max_mmr,
+                "demotion_lives": t.demotion_lives,
+                "points_win": t.points_win,
+                "points_draw": t.points_draw,
+                "promotion_points": t.promotion_points,
+                "capacity": t.capacity
+            } for t in st.session_state.get("tier_config", [])
+        ],
         # Segments (Serialize)
         "segments": [
             {
@@ -269,7 +281,34 @@ else:
                 elif k == 'goal_diff_rules':
                     st.session_state.goal_diff_rules = pd.DataFrame(v)
                 elif k == 'tier_config':
-                    st.session_state.tier_config = v
+                    try:
+                        loaded_tiers = []
+                        for t in v:
+                            # Handle migration from old format (dict with "Tier", "Min", "Max")
+                            if "Tier" in t:
+                                loaded_tiers.append(TierConfig(
+                                    name=t["Tier"],
+                                    type=TierType.MMR,
+                                    min_mmr=t.get("Min", 0),
+                                    max_mmr=t.get("Max", 9999)
+                                ))
+                            else:
+                                # New format
+                                loaded_tiers.append(TierConfig(
+                                    name=t["name"],
+                                    type=TierType(t["type"]),
+                                    min_mmr=t.get("min_mmr", 0),
+                                    max_mmr=t.get("max_mmr", 9999),
+                                    demotion_lives=t.get("demotion_lives", 0),
+                                    points_win=t.get("points_win", 0),
+                                    points_draw=t.get("points_draw", 0),
+                                    promotion_points=t.get("promotion_points", 100),
+                                    capacity=t.get("capacity", 0)
+                                ))
+                        st.session_state.tier_config = loaded_tiers
+                    except Exception as e:
+                        st.warning(f"티어 설정 로드 중 오류: {e}")
+                        st.session_state.tier_config = []
                 else:
                     st.session_state[k] = v
             if "user_comments" in loaded_config:
@@ -372,30 +411,73 @@ else:
                 st.caption("제어판에서 보정 모드를 활성화하면 추가 설정이 표시됩니다.")
 
         # --- Tier Configuration ---
-        if 'tier_config' not in st.session_state:
+        if 'tier_config' not in st.session_state or not st.session_state.tier_config:
+            # Default Tiers
             st.session_state.tier_config = [
-                {"Tier": "Bronze", "Min": 0, "Max": 1200},
-                {"Tier": "Silver", "Min": 1200, "Max": 1400},
-                {"Tier": "Gold", "Min": 1400, "Max": 1600},
-                {"Tier": "Platinum", "Min": 1600, "Max": 1800},
-                {"Tier": "Diamond", "Min": 1800, "Max": 2000},
-                {"Tier": "Master", "Min": 2000, "Max": 2400},
-                {"Tier": "Challenger", "Min": 2400, "Max": 5000}
+                TierConfig("Bronze", TierType.MMR, 0, 1200),
+                TierConfig("Silver", TierType.MMR, 1200, 1400),
+                TierConfig("Gold", TierType.MMR, 1400, 1600),
+                TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100), # Example Ladder
+                TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100) # Example Ratio
             ]
 
         with st.expander("티어 기준 설정 (Tier Config)"):
-            st.caption("티어 이름과 점수 구간을 설정하세요.")
-            st.session_state.tier_config = st.data_editor(
-                st.session_state.tier_config,
+            st.caption("티어별 승강등 규칙을 설정하세요. 순서는 낮은 티어부터 높은 티어 순입니다.")
+            
+            # Convert to DataFrame for Editor
+            tier_data = []
+            for t in st.session_state.tier_config:
+                tier_data.append({
+                    "name": t.name,
+                    "type": t.type.value,
+                    "min_mmr": t.min_mmr,
+                    "max_mmr": t.max_mmr,
+                    "demotion_lives": t.demotion_lives,
+                    "points_win": t.points_win,
+                    "points_draw": t.points_draw,
+                    "promotion_points": t.promotion_points,
+                    "capacity": t.capacity
+                })
+            
+            df_tiers = pd.DataFrame(tier_data)
+            
+            edited_tiers = st.data_editor(
+                df_tiers,
                 column_config={
-                    "Tier": st.column_config.TextColumn("티어 이름 (Name)", required=True),
-                    "Min": st.column_config.NumberColumn("최소 점수 (Min)", required=True, step=10),
-                    "Max": st.column_config.NumberColumn("최대 점수 (Max)", required=True, step=10),
+                    "name": st.column_config.TextColumn("티어 이름", required=True),
+                    "type": st.column_config.SelectColumn("타입", options=["MMR", "Ladder", "Ratio"], required=True),
+                    "min_mmr": st.column_config.NumberColumn("최소 MMR", help="MMR/Ladder 타입의 진입/강등 기준"),
+                    "max_mmr": st.column_config.NumberColumn("최대 MMR", help="MMR 타입의 승급 기준"),
+                    "demotion_lives": st.column_config.NumberColumn("강등 방어 (Lives)", help="강등 조건 도달 시 버틸 수 있는 패배 횟수 (0=즉시 강등)"),
+                    "points_win": st.column_config.NumberColumn("승리 승점", help="Ladder: 승리 시 획득 포인트"),
+                    "points_draw": st.column_config.NumberColumn("무승부 승점", help="Ladder: 무승부 시 획득 포인트"),
+                    "promotion_points": st.column_config.NumberColumn("승급 포인트", help="Ladder: 승급에 필요한 포인트"),
+                    "capacity": st.column_config.NumberColumn("정원 (Ratio)", help="Ratio: 상위 N명 (절대값)")
                 },
                 num_rows="dynamic",
                 hide_index=True,
-                key="tier_editor"
+                key="tier_editor_new"
             )
+            
+            # Update Session State
+            new_tiers = []
+            if not edited_tiers.empty:
+                for index, row in edited_tiers.iterrows():
+                    try:
+                        new_tiers.append(TierConfig(
+                            name=row["name"],
+                            type=TierType(row["type"]),
+                            min_mmr=int(row["min_mmr"]),
+                            max_mmr=int(row["max_mmr"]),
+                            demotion_lives=int(row["demotion_lives"]),
+                            points_win=int(row["points_win"]),
+                            points_draw=int(row["points_draw"]),
+                            promotion_points=int(row["promotion_points"]),
+                            capacity=int(row["capacity"])
+                        ))
+                    except Exception as e:
+                        st.error(f"티어 설정 저장 중 오류: {e}")
+            st.session_state.tier_config = new_tiers
 
         with st.expander("유저 세그먼트 (티어/실력 분포)"):
             st.write("유저 세그먼트 및 특성을 정의하세요.")
@@ -487,7 +569,7 @@ else:
     # --- Main Content ---
     st.title("Rank simulation")
 
-    tab1, tab2, tab3 = st.tabs(["시뮬레이션 실행", "분석", "매치 기록"])
+    tab1, tab2, tab3, tab4 = st.tabs(["시뮬레이션 실행", "분석", "매치 기록", "랭크 분석"])
 
     with tab1:
         col1, col2 = st.columns([1, 2])
@@ -534,8 +616,8 @@ else:
                         st.session_state.simulation = FastSimulation(
                             num_users=st.session_state.num_users,
                             segment_configs=segment_configs,
-                            elo_config=elo_config,
                             match_config=match_config,
+                            tier_configs=st.session_state.tier_config,
                             initial_mmr=st.session_state.initial_mmr
                         )
                         st.session_state.stats_history = []
@@ -545,6 +627,7 @@ else:
                         st.session_state.simulation.elo_config = elo_config
                         st.session_state.simulation.match_config = match_config
                         st.session_state.simulation.segment_configs = segment_configs
+                        st.session_state.simulation.tier_configs = st.session_state.tier_config
                         st.success(f"시뮬레이션 설정이 업데이트되었습니다. (Day {st.session_state.simulation.day}부터 계속)")
                     
                     st.session_state.simulation.initialize_users()
@@ -648,24 +731,41 @@ else:
                 # Tier Distribution
                 st.markdown("### 티어 분포")
                 
-                # Use dynamic tier config
-                raw_tiers = st.session_state.tier_config
-                # Sort by Min score to ensure correct order
-                sorted_tiers = sorted(raw_tiers, key=lambda x: x['Min'])
-                
-                tiers = [(t['Tier'], t['Min'], t['Max']) for t in sorted_tiers]
-                
                 sim = st.session_state.simulation
-                tier_counts = {name: 0 for name, _, _ in tiers}
-                for mmr in sim.mmr:
-                    for name, low, high in tiers:
-                        if low <= mmr < high:
-                            tier_counts[name] += 1
-                            break
-            
-                tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
-                fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수")
-                st.plotly_chart(fig_tier, use_container_width=True)
+                
+                if sim.tier_configs:
+                    # Use tracked tier indices
+                    tier_counts = {}
+                    for i, config in enumerate(sim.tier_configs):
+                        count = np.sum(sim.user_tier_index == i)
+                        tier_counts[config.name] = count
+                    
+                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
+                    fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수 (현재)")
+                    st.plotly_chart(fig_tier, use_container_width=True)
+                else:
+                    # Fallback to MMR ranges if no tier config (Legacy)
+                    raw_tiers = st.session_state.tier_config
+                    # Sort by Min score to ensure correct order
+                    sorted_tiers = sorted(raw_tiers, key=lambda x: x.min_mmr if isinstance(x, TierConfig) else x['Min'])
+                    
+                    tiers = []
+                    for t in sorted_tiers:
+                        if isinstance(t, TierConfig):
+                             tiers.append((t.name, t.min_mmr, t.max_mmr))
+                        else:
+                             tiers.append((t['Tier'], t['Min'], t['Max']))
+                    
+                    tier_counts = {name: 0 for name, _, _ in tiers}
+                    for mmr in sim.mmr:
+                        for name, low, high in tiers:
+                            if low <= mmr < high:
+                                tier_counts[name] += 1
+                                break
+                
+                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
+                    fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수 (MMR 기준)")
+                    st.plotly_chart(fig_tier, use_container_width=True)
 
                 # Segment Performance Analysis
                 st.markdown("### 세그먼트 성과 분석 (Segment Performance)")
@@ -751,13 +851,109 @@ else:
                             "Result": f"{log.result} ({log.result_type})",
                             "Goal Diff": log.goal_diff,
                             "Change": f"{log.mmr_change:+.1f}",
-                            "New MMR": f"{log.current_mmr:.1f}"
+                            "New MMR": f"{log.current_mmr:.1f}",
+                            "Tier": sim.tier_configs[log.current_tier_index].name if sim.tier_configs and log.current_tier_index < len(sim.tier_configs) else "-",
+                            "Ladder Points": log.current_ladder_points
                         })
-                    st.dataframe(pd.DataFrame(log_data))
+                    
+                    df_logs = pd.DataFrame(log_data)
+                    st.dataframe(df_logs)
+                    
+                    # Rank History Chart
+                    if sim.tier_configs:
+                        st.markdown("#### 랭크 변동 이력")
+                        # Map Tier Name to Index for Y-axis, but show Name
+                        # Or just plot Index
+                        
+                        fig_rank = go.Figure()
+                        
+                        # Extract history
+                        days = [l.day for l in logs]
+                        tier_indices = [l.current_tier_index for l in logs]
+                        points = [l.current_ladder_points for l in logs]
+                        
+                        # Primary Y: Tier
+                        fig_rank.add_trace(go.Scatter(x=days, y=tier_indices, name="Tier Level", mode='lines+markers', line=dict(shape='hv')))
+                        
+                        # Secondary Y: Points (Optional, maybe too cluttered? Let's just show Tier for now)
+                        # Or show points as hover text
+                        
+                        # Custom Y-axis ticks
+                        tier_names = [t.name for t in sim.tier_configs]
+                        fig_rank.update_layout(
+                            yaxis=dict(
+                                tickmode='array',
+                                tickvals=list(range(len(tier_names))),
+                                ticktext=tier_names,
+                                title="Tier"
+                            ),
+                            title="시간대별 티어 변화"
+                        )
+                        st.plotly_chart(fig_rank, use_container_width=True)
                 else:
                     st.info("진행된 경기가 없습니다.")
         else:
             st.info("매치 기록을 보려면 먼저 시뮬레이션을 실행하세요.")
+
+    with tab4:
+        st.subheader("랭크 시스템 분석")
+        if st.session_state.simulation and st.session_state.simulation.tier_configs:
+            sim = st.session_state.simulation
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 승급/강등 현황")
+                # Prepare data
+                prom_data = []
+                for t_idx, count in sim.promotion_counts.items():
+                    if t_idx < len(sim.tier_configs):
+                        prom_data.append({"Tier": sim.tier_configs[t_idx].name, "Count": count, "Type": "Promotion"})
+                
+                dem_data = []
+                for t_idx, count in sim.demotion_counts.items():
+                    if t_idx < len(sim.tier_configs):
+                        dem_data.append({"Tier": sim.tier_configs[t_idx].name, "Count": count, "Type": "Demotion"})
+                
+                df_trans = pd.DataFrame(prom_data + dem_data)
+                if not df_trans.empty:
+                    fig_trans = px.bar(df_trans, x="Tier", y="Count", color="Type", barmode="group", title="티어별 승급/강등 횟수")
+                    st.plotly_chart(fig_trans, use_container_width=True)
+                else:
+                    st.info("아직 승급/강등 데이터가 없습니다.")
+            
+            with col2:
+                st.markdown("#### 티어별 도달 난이도 (예상)")
+                # This is hard to calculate exactly without full history for everyone.
+                # But we can show current distribution as a proxy for difficulty?
+                # Or show "Average Matches to Promote" if we tracked it.
+                # Since we didn't track "Matches to Reach" globally yet, let's show Demotion Rate?
+                
+                # Demotion Rate = Demotions / (Promotions + Demotions + Stays) ?
+                # Or just Demotions / Total Users in Tier?
+                
+                rates = []
+                for i, config in enumerate(sim.tier_configs):
+                    user_count = np.sum(sim.user_tier_index == i)
+                    dems = sim.demotion_counts.get(i, 0)
+                    proms = sim.promotion_counts.get(i+1, 0) # Promoted TO next tier (from this tier)
+                    
+                    # Total events
+                    # This is cumulative over time, user_count is snapshot.
+                    # Ratio might be misleading.
+                    # Let's just show raw counts table.
+                    rates.append({
+                        "Tier": config.name,
+                        "Current Users": user_count,
+                        "Total Promotions (Out)": proms,
+                        "Total Demotions (In)": dems # Demoted INTO this tier? No, demotion_counts[i] is demoted FROM i?
+                        # My logic: demotion_counts[t_idx] = demoted FROM t_idx to t_idx-1.
+                    })
+                    
+                st.dataframe(pd.DataFrame(rates))
+                
+        else:
+            st.info("랭크 분석을 보려면 시뮬레이션을 실행하고 티어 설정을 완료하세요.")
 
     # --- Comments Section ---
     st.divider()
