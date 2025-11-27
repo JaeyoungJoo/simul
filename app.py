@@ -366,8 +366,8 @@ else:
                                     points_draw=t.get("points_draw", 0),
                                     promotion_points=t.get("promotion_points", 100),
                                     capacity=t.get("capacity", 0),
-                                    placement_min_mmr=t.get("placement_min_mmr", 0),
-                                    placement_max_mmr=t.get("placement_max_mmr", 0)
+                                    placement_min_mmr=t.get("placement_min_mmr", t.get("min_mmr", 0)),
+                                    placement_max_mmr=t.get("placement_max_mmr", t.get("max_mmr", 0))
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
@@ -492,11 +492,11 @@ else:
         if 'tier_config' not in st.session_state or not st.session_state.tier_config:
             # Default Tiers
             st.session_state.tier_config = [
-                TierConfig("Bronze", TierType.MMR, 0, 1200),
-                TierConfig("Silver", TierType.MMR, 1200, 1400),
-                TierConfig("Gold", TierType.MMR, 1400, 1600),
-                TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100), # Example Ladder
-                TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100) # Example Ratio
+                TierConfig("Bronze", TierType.MMR, 0, 1200, placement_min_mmr=0, placement_max_mmr=1200),
+                TierConfig("Silver", TierType.MMR, 1200, 1400, placement_min_mmr=1200, placement_max_mmr=1400),
+                TierConfig("Gold", TierType.MMR, 1400, 1600, placement_min_mmr=1400, placement_max_mmr=1600),
+                TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100, placement_min_mmr=1600, placement_max_mmr=1800), # Example Ladder
+                TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
             ]
 
         with st.expander("티어 기준 설정 (Tier Config)"):

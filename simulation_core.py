@@ -969,6 +969,18 @@ class FastSimulation:
         self.draws.fill(0)
         self.streak.fill(0)
         
+        # Reset Tier Status
+        if self.elo_config.placement_matches > 0:
+            self.user_tier_index.fill(-1)
+        else:
+            # Re-initialize tiers based on new MMR if no placement
+            self._initialize_tiers()
+            
+        self.user_ladder_points.fill(0)
+        self.user_demotion_lives.fill(0)
+        self.promotion_counts = {}
+        self.demotion_counts = {}
+        
         # Clear logs for the new season to keep inspector clean? 
         # Or maybe we should keep them. For FastMode, let's clear them to save memory/confusion.
         for k in self.match_logs:
@@ -998,6 +1010,18 @@ class FastSimulation:
         self.losses.fill(0)
         self.draws.fill(0)
         self.streak.fill(0)
+        
+        # Reset Tier Status
+        if self.elo_config.placement_matches > 0:
+            self.user_tier_index.fill(-1)
+        else:
+            # Re-initialize tiers based on new MMR if no placement
+            self._initialize_tiers()
+            
+        self.user_ladder_points.fill(0)
+        self.user_demotion_lives.fill(0)
+        self.promotion_counts = {}
+        self.demotion_counts = {}
         
         for k in self.match_logs:
             self.match_logs[k] = []
