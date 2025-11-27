@@ -21,6 +21,7 @@ class TierConfig:
     max_mmr: int = 9999
     demotion_mmr: int = 0 # Not used directly, logic uses min_mmr
     demotion_lives: int = 0 # 0 = No demotion
+    loss_point_correction: float = 1.0 # Multiplier for negative point changes (e.g., 0.8 = 80% loss)
     
     # Ladder specific
     points_win: int = 0
@@ -51,6 +52,126 @@ class MatchLog:
     current_tier_index: int = 0
     current_ladder_points: int = 0
     match_count: int = 0
+
+# ... (FastSimulation class definition remains unchanged) ...
+
+    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
+        all_idx = np.concatenate([idx_a, idx_b])
+        res_a = np.zeros(len(idx_a), dtype=int)
+        res_a[win_a] = 1
+        res_a[loss_a] = -1
+        
+        res_b = np.zeros(len(idx_b), dtype=int)
+        res_b[win_a] = -1
+        res_b[loss_a] = 1
+        
+        all_res = np.concatenate([res_a, res_b])
+        all_mmr_change = np.concatenate([mmr_change_a, mmr_change_b])
+        
+        # Placement Logic
+        if self.elo_config.placement_matches > 0:
+            just_finished_mask = (self.matches_played[all_idx] == self.elo_config.placement_matches)
+            if just_finished_mask.any():
+                finished_indices = all_idx[just_finished_mask]
+                self._assign_placement_tier(finished_indices)
+
+        current_tiers = self.user_tier_index[all_idx]
+        unique_tiers = np.unique(current_tiers)
+        
+        for t_idx in unique_tiers:
+            if t_idx == -1: continue # Skip unranked
+            if t_idx >= len(self.tier_configs): continue
+            
+            config = self.tier_configs[t_idx]
+            mask = current_tiers == t_idx
+            indices = all_idx[mask]
+            results = all_res[mask]
+            mmr_changes = all_mmr_change[mask]
+            current_mmrs = self.mmr[indices]
+            
+            # --- Point Calculation ---
+            points_change = np.zeros(len(indices), dtype=float)
+            
+            if config.type == TierType.LADDER:
+                points_change[results == 1] = config.points_win
+                points_change[results == 0] = config.points_draw
+                
+            elif config.type == TierType.MMR:
+                # MMR Type now uses Points driven by MMR change
+                if self.elo_config.calibration_enabled:
+                    cal_bonus = self.elo_config.calibration_k_bonus
+                    cal_count = self.elo_config.calibration_match_count
+                    is_cal = self.matches_played[indices] <= cal_count 
+                    
+                    # Reverse engineer raw change approximation
+                    points_change = np.where(is_cal, mmr_changes / cal_bonus, mmr_changes)
+                else:
+                    points_change = mmr_changes
+                    
+                # Apply Convergence Rate
+                points_change *= self.point_convergence_rate
+                
+                # Apply Loss Point Correction (New Feature)
+                # If points_change is negative, multiply by correction factor (e.g. 0.8)
+                neg_mask = points_change < 0
+                if config.loss_point_correction != 1.0:
+                    points_change[neg_mask] *= config.loss_point_correction
+                
+            # Apply Points Change
+            self.user_ladder_points[indices] += points_change.astype(int)
+            
+            # --- Promotion Logic ---
+            # Determine Target Promotion Points based on MMR Range
+            target_points = np.full(len(indices), config.promotion_points)
+            
+            # Low MMR (Below Min)
+            low_mask = current_mmrs < config.min_mmr
+            target_points[low_mask] = config.promotion_points_low
+            
+            # High MMR (Above Max)
+            high_mask = current_mmrs >= config.max_mmr
+            target_points[high_mask] = config.promotion_points_high
+            
+            # Check Promotion
+            prom_mask = self.user_ladder_points[indices] >= target_points
+            
+            # Prevent promotion if this is the highest tier
+            if t_idx < len(self.tier_configs) - 1:
+                prom_indices = indices[prom_mask]
+                if len(prom_indices) > 0:
+                    self.user_tier_index[prom_indices] += 1
+                    self.user_ladder_points[prom_indices] = 0 # Reset points on entry
+                    
+                    # Reset Lives for new tier
+                    new_tier_config = self.tier_configs[t_idx + 1]
+                    self.user_demotion_lives[prom_indices] = new_tier_config.demotion_lives
+                    
+                    self.promotion_counts[t_idx + 1] = self.promotion_counts.get(t_idx + 1, 0) + len(prom_indices)
+                    
+            # --- Demotion Logic (Lives) ---
+            if config.demotion_lives > 0:
+                # Only apply to those who didn't promote
+                not_promoted = ~prom_mask
+                
+                loss_mask = results == -1
+                risk_indices_mask = loss_mask & not_promoted
+                
+                if risk_indices_mask.any():
+                    risk_indices = indices[risk_indices_mask]
+                    self.user_demotion_lives[risk_indices] -= 1
+                    
+                    demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                    
+                    if demote_mask.any() and t_idx > 0:
+                        dem_indices = risk_indices[demote_mask]
+                        self.user_tier_index[dem_indices] -= 1
+                        self.user_ladder_points[dem_indices] = 0
+                        
+                        # Reset Lives for lower tier
+                        lower_tier_config = self.tier_configs[t_idx - 1]
+                        self.user_demotion_lives[dem_indices] = lower_tier_config.demotion_lives
+                        
+                        self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
 @dataclass
 class SegmentConfig:
@@ -868,6 +989,12 @@ class FastSimulation:
                     
                 # Apply Convergence Rate
                 points_change *= self.point_convergence_rate
+                
+                # Apply Loss Point Correction (New Feature)
+                # If points_change is negative, multiply by correction factor (e.g. 0.8)
+                neg_mask = points_change < 0
+                if getattr(config, 'loss_point_correction', 1.0) != 1.0:
+                    points_change[neg_mask] *= getattr(config, 'loss_point_correction', 1.0)
                 
             # Apply Points Change
             self.user_ladder_points[indices] += points_change.astype(int)
