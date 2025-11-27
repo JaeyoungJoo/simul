@@ -1139,6 +1139,62 @@ else:
         else:
             st.info("랭크 분석을 보려면 시뮬레이션을 실행하고 티어 설정을 완료하세요.")
 
+        # --- Divergence Analysis (New Request) ---
+        st.divider()
+        st.markdown("#### 티어별 실력 안착 분석 (Divergence Analysis)")
+        st.caption("각 티어의 목표 MMR 중간값과 실제 해당 티어에 안착한 유저들의 실력(True Skill) 중간값의 차이를 분석합니다.")
+        
+        if st.session_state.simulation and st.session_state.simulation.tier_configs:
+            sim = st.session_state.simulation
+            div_data = []
+            
+            for i, config in enumerate(sim.tier_configs):
+                # 1. Target Median
+                if config.max_mmr >= 9999:
+                    target_median = config.min_mmr + 100 # Arbitrary buffer for infinite top tier
+                else:
+                    target_median = (config.min_mmr + config.max_mmr) / 2
+                
+                # 2. Actual Users
+                indices = np.where(sim.user_tier_index == i)[0]
+                
+                if len(indices) > 0:
+                    actual_median_ts = np.median(sim.true_skill[indices])
+                    actual_avg_ts = np.mean(sim.true_skill[indices])
+                    divergence = actual_median_ts - target_median
+                    user_count = len(indices)
+                else:
+                    actual_median_ts = 0
+                    actual_avg_ts = 0
+                    divergence = 0
+                    user_count = 0
+                
+                div_data.append({
+                    "Tier": config.name,
+                    "Target Median MMR": f"{target_median:.0f}",
+                    "Actual Median TS": f"{actual_median_ts:.0f}",
+                    "Divergence": f"{divergence:+.0f}",
+                    "User Count": user_count,
+                    "_divergence_val": divergence # For sorting/coloring if needed
+                })
+            
+            df_div = pd.DataFrame(div_data)
+            
+            # Display Table
+            st.dataframe(
+                df_div.style.background_gradient(subset=["_divergence_val"], cmap="RdYlGn", vmin=-500, vmax=500),
+                column_config={
+                    "_divergence_val": None # Hide helper column
+                },
+                use_container_width=True
+            )
+            
+            # Chart
+            fig_div = px.bar(df_div, x="Tier", y="_divergence_val", 
+                             title="티어별 실력 괴리도 (양수: 실력이 더 높음 / 음수: 실력이 더 낮음)",
+                             labels={"_divergence_val": "Divergence (True Skill - Target MMR)"})
+            st.plotly_chart(fig_div, use_container_width=True)
+
     # --- Comments Section ---
     st.divider()
     st.subheader("Comment")
