@@ -10,6 +10,35 @@ from streamlit_gsheets import GSheetsConnection
 import extra_streamlit_components as stx
 import time
 import datetime
+import io
+
+def render_bulk_csv_uploader(label, current_df, key_suffix):
+    with st.expander(f"{label} - CSV 일괄 입력 (Bulk Input)"):
+        st.caption("엑셀이나 CSV 데이터를 복사해서 붙여넣으세요. (첫 줄은 헤더여야 합니다)")
+        csv_input = st.text_area(f"CSV 데이터 붙여넣기 ({label})", key=f"csv_input_{key_suffix}")
+        if st.button(f"CSV 적용 ({label})", key=f"csv_apply_{key_suffix}"):
+            if csv_input:
+                try:
+                    # Try reading with different separators if needed, default comma/tab
+                    # Auto-detecting separator is tricky, let's assume tab or comma
+                    try:
+                        new_df = pd.read_csv(io.StringIO(csv_input), sep=None, engine='python')
+                    except:
+                        new_df = pd.read_csv(io.StringIO(csv_input))
+                    
+                    # Basic validation: Check if columns match (optional, but good for safety)
+                    # If current_df has columns, check overlap
+                    if not current_df.empty:
+                        missing_cols = [c for c in current_df.columns if c not in new_df.columns]
+                        if missing_cols:
+                            st.warning(f"경고: 다음 컬럼이 누락되었습니다: {missing_cols}. 데이터가 올바르지 않을 수 있습니다.")
+                    
+                    return new_df
+                except Exception as e:
+                    st.error(f"CSV 파싱 오류: {e}")
+            else:
+                st.warning("데이터를 입력하세요.")
+    return None
 
 st.set_page_config(page_title="Rank Simulation", layout="wide")
 
@@ -373,6 +402,12 @@ else:
                 
             try:
                 st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor")
+                
+                # Bulk Input
+                new_streak_df = render_bulk_csv_uploader("연승 규칙", st.session_state.streak_rules, "streak")
+                if new_streak_df is not None:
+                    st.session_state.streak_rules = new_streak_df
+                    st.rerun()
             except Exception as e:
                 st.error(f"연승 규칙 표시 오류: {e}")
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
@@ -393,6 +428,12 @@ else:
                 
             try:
                 st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor")
+                
+                # Bulk Input
+                new_gd_df = render_bulk_csv_uploader("골 득실 규칙", st.session_state.goal_diff_rules, "gd")
+                if new_gd_df is not None:
+                    st.session_state.goal_diff_rules = new_gd_df
+                    st.rerun()
             except Exception as e:
                 st.error(f"골 득실 규칙 표시 오류: {e}")
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
@@ -459,6 +500,28 @@ else:
                 key="tier_editor_new"
             )
             
+            # Bulk Input for Tiers
+            new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier")
+            if new_tier_df is not None:
+                try:
+                    bulk_tiers = []
+                    for index, row in new_tier_df.iterrows():
+                        bulk_tiers.append(TierConfig(
+                            name=str(row["name"]),
+                            type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
+                            min_mmr=int(row["min_mmr"]),
+                            max_mmr=int(row["max_mmr"]),
+                            demotion_lives=int(row["demotion_lives"]),
+                            points_win=int(row["points_win"]),
+                            points_draw=int(row["points_draw"]),
+                            promotion_points=int(row["promotion_points"]),
+                            capacity=int(row["capacity"])
+                        ))
+                    st.session_state.tier_config = bulk_tiers
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"티어 CSV 적용 오류: {e}")
+
             # Update Session State
             new_tiers = []
             if not edited_tiers.empty:
@@ -558,6 +621,12 @@ else:
                         "soft_reset_ratio": st.column_config.NumberColumn("압축 비율 (0=완전초기화)", required=True, min_value=0.0, max_value=1.0, step=0.1, help="0이면 목표 MMR로 완전 초기화, 1이면 현재 MMR 유지. 0.5면 중간값.")
                     }
                 )
+                
+                # Bulk Input
+                new_reset_df = render_bulk_csv_uploader("초기화 규칙", st.session_state.reset_rules, "reset")
+                if new_reset_df is not None:
+                    st.session_state.reset_rules = new_reset_df
+                    st.rerun()
             except Exception as e:
                 st.error(f"초기화 규칙 표시 오류: {e}")
                 st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
