@@ -12,27 +12,58 @@ import time
 import datetime
 import io
 
-def render_bulk_csv_uploader(label, current_df, key_suffix):
+def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None):
     with st.expander(f"{label} - CSV 일괄 입력 (Bulk Input)"):
         st.caption("엑셀이나 CSV 데이터를 복사해서 붙여넣으세요. (첫 줄은 헤더여야 합니다)")
         csv_input = st.text_area(f"CSV 데이터 붙여넣기 ({label})", key=f"csv_input_{key_suffix}")
         if st.button(f"CSV 적용 ({label})", key=f"csv_apply_{key_suffix}"):
             if csv_input:
                 try:
-                    # Try reading with different separators if needed, default comma/tab
-                    # Auto-detecting separator is tricky, let's assume tab or comma
+                    # 1. Try reading with Python engine (auto-detect)
                     try:
                         new_df = pd.read_csv(io.StringIO(csv_input), sep=None, engine='python')
                     except:
+                        # Fallback to default
                         new_df = pd.read_csv(io.StringIO(csv_input))
                     
-                    # Basic validation: Check if columns match (optional, but good for safety)
-                    # If current_df has columns, check overlap
+                    # 2. Check if it looks like tab-separated but read as comma (1 column)
+                    if len(new_df.columns) == 1 and '\t' in csv_input:
+                         try:
+                            new_df = pd.read_csv(io.StringIO(csv_input), sep='\t')
+                         except:
+                            pass
+
+                    # 3. Apply Header Mapping (Korean Label -> English Key)
+                    if header_mapping:
+                        # Normalize columns: strip whitespace
+                        new_df.columns = new_df.columns.str.strip()
+                        
+                        # Create a reverse mapping check
+                        renamed_cols = {}
+                        for col in new_df.columns:
+                            if col in header_mapping:
+                                renamed_cols[col] = header_mapping[col]
+                        
+                        if renamed_cols:
+                            new_df = new_df.rename(columns=renamed_cols)
+
+                    # 4. Validation
                     if not current_df.empty:
-                        missing_cols = [c for c in current_df.columns if c not in new_df.columns]
-                        if missing_cols:
-                            st.warning(f"경고: 다음 컬럼이 누락되었습니다: {missing_cols}. 데이터가 올바르지 않을 수 있습니다.")
-                    
+                        # Check for missing required columns (intersection with current_df columns)
+                        # We only care if *required* columns are missing, but we don't know which are required here.
+                        # Just check overlap with current_df keys.
+                        expected_cols = set(current_df.columns)
+                        found_cols = set(new_df.columns)
+                        missing_cols = list(expected_cols - found_cols)
+                        
+                        # Filter out missing cols that might be optional or auto-generated if needed?
+                        # For now, just warn if high overlap is expected.
+                        if missing_cols and len(missing_cols) < len(expected_cols): # If some match but not all
+                             st.warning(f"주의: 다음 컬럼을 찾을 수 없습니다: {missing_cols}. (헤더 이름을 확인하세요)")
+                        elif len(missing_cols) == len(expected_cols):
+                             st.error(f"오류: 일치하는 컬럼이 없습니다. 헤더가 올바른지 확인하세요.\n기대하는 컬럼(또는 한글명): {list(header_mapping.keys()) if header_mapping else list(expected_cols)}")
+                             return None
+
                     return new_df
                 except Exception as e:
                     st.error(f"CSV 파싱 오류: {e}")
@@ -404,7 +435,8 @@ else:
                 st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor")
                 
                 # Bulk Input
-                new_streak_df = render_bulk_csv_uploader("연승 규칙", st.session_state.streak_rules, "streak")
+                streak_map = {"연승 횟수": "min_streak", "보너스 점수": "bonus", "min_streak": "min_streak", "bonus": "bonus"} # Self-map included
+                new_streak_df = render_bulk_csv_uploader("연승 규칙", st.session_state.streak_rules, "streak", streak_map)
                 if new_streak_df is not None:
                     st.session_state.streak_rules = new_streak_df
                     st.rerun()
@@ -430,7 +462,8 @@ else:
                 st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor")
                 
                 # Bulk Input
-                new_gd_df = render_bulk_csv_uploader("골 득실 규칙", st.session_state.goal_diff_rules, "gd")
+                gd_map = {"골 득실차": "min_diff", "보너스 점수": "bonus", "min_diff": "min_diff", "bonus": "bonus"}
+                new_gd_df = render_bulk_csv_uploader("골 득실 규칙", st.session_state.goal_diff_rules, "gd", gd_map)
                 if new_gd_df is not None:
                     st.session_state.goal_diff_rules = new_gd_df
                     st.rerun()
@@ -501,7 +534,16 @@ else:
             )
             
             # Bulk Input for Tiers
-            new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier")
+            tier_map = {
+                "티어 이름": "name", "타입": "type", "최소 MMR": "min_mmr", "최대 MMR": "max_mmr",
+                "강등 방어 (Lives)": "demotion_lives", "승리 승점": "points_win", "무승부 승점": "points_draw",
+                "승급 포인트": "promotion_points", "정원 (Ratio)": "capacity",
+                # English keys just in case
+                "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
+                "demotion_lives": "demotion_lives", "points_win": "points_win", "points_draw": "points_draw",
+                "promotion_points": "promotion_points", "capacity": "capacity"
+            }
+            new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
             if new_tier_df is not None:
                 try:
                     bulk_tiers = []
@@ -623,7 +665,11 @@ else:
                 )
                 
                 # Bulk Input
-                new_reset_df = render_bulk_csv_uploader("초기화 규칙", st.session_state.reset_rules, "reset")
+                reset_map = {
+                    "최소 MMR": "min_mmr", "최대 MMR": "max_mmr", "초기화 목표 MMR": "reset_mmr", "압축 비율 (0=완전초기화)": "soft_reset_ratio",
+                    "min_mmr": "min_mmr", "max_mmr": "max_mmr", "reset_mmr": "reset_mmr", "soft_reset_ratio": "soft_reset_ratio"
+                }
+                new_reset_df = render_bulk_csv_uploader("초기화 규칙", st.session_state.reset_rules, "reset", reset_map)
                 if new_reset_df is not None:
                     st.session_state.reset_rules = new_reset_df
                     st.rerun()
