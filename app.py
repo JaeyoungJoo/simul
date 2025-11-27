@@ -166,7 +166,10 @@ def save_config():
                 "promotion_points": t.promotion_points,
                 "capacity": t.capacity,
                 "placement_min_mmr": t.placement_min_mmr,
-                "placement_max_mmr": t.placement_max_mmr
+                "placement_max_mmr": t.placement_max_mmr,
+                "promotion_points_low": getattr(t, "promotion_points_low", t.promotion_points),
+                "promotion_points_high": getattr(t, "promotion_points_high", t.promotion_points),
+                "loss_point_correction": getattr(t, "loss_point_correction", 1.0)
             } for t in st.session_state.get("tier_config", [])
         ],
         # Segments (Serialize)
@@ -389,7 +392,8 @@ else:
                                     placement_min_mmr=t.get("placement_min_mmr", t.get("min_mmr", 0)),
                                     placement_max_mmr=t.get("placement_max_mmr", t.get("max_mmr", 0)),
                                     promotion_points_low=t.get("promotion_points_low", t.get("promotion_points", 100)),
-                                    promotion_points_high=t.get("promotion_points_high", t.get("promotion_points", 100))
+                                    promotion_points_high=t.get("promotion_points_high", t.get("promotion_points", 100)),
+                                    loss_point_correction=t.get("loss_point_correction", 1.0)
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
