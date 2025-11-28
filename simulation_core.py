@@ -948,11 +948,13 @@ class FastSimulation:
         all_mmr_change = np.concatenate([mmr_change_a, mmr_change_b])
         
         # Placement Logic
+        just_finished_placement = np.array([], dtype=int)
         if self.elo_config.placement_matches > 0:
             just_finished_mask = (self.matches_played[all_idx] == self.elo_config.placement_matches)
             if just_finished_mask.any():
                 finished_indices = all_idx[just_finished_mask]
                 self._assign_placement_tier(finished_indices)
+                just_finished_placement = finished_indices
 
         current_tiers = self.user_tier_index[all_idx]
         unique_tiers = np.unique(current_tiers)
@@ -996,6 +998,11 @@ class FastSimulation:
                 if getattr(config, 'loss_point_correction', 1.0) != 1.0:
                     points_change[neg_mask] *= getattr(config, 'loss_point_correction', 1.0)
                 
+            # Exclude points for users who just finished placement (Start at 0)
+            if len(just_finished_placement) > 0:
+                is_just_finished = np.isin(indices, just_finished_placement)
+                points_change[is_just_finished] = 0
+            
             # Apply Points Change
             self.user_ladder_points[indices] += points_change.astype(int)
             
