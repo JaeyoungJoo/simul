@@ -17,8 +17,8 @@ class TierConfig:
     name: str
     type: TierType
     # MMR specific
-    min_mmr: int = 0
-    max_mmr: int = 9999
+    min_mmr: float = 0.0
+    max_mmr: float = 9999.0
     demotion_mmr: int = 0 # Not used directly, logic uses min_mmr
     demotion_lives: int = 0 # 0 = No demotion
     loss_point_correction: float = 1.0 # Multiplier for negative point changes (e.g., 0.8 = 80% loss)

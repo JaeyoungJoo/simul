@@ -566,8 +566,8 @@ else:
                 column_config={
                     "name": st.column_config.TextColumn("티어 이름", required=True),
                     "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio"], required=True),
-                    "min_mmr": st.column_config.NumberColumn("최소 MMR", help="MMR/Ladder 타입의 진입/강등 기준"),
-                    "max_mmr": st.column_config.NumberColumn("최대 MMR", help="MMR 타입의 승급 기준"),
+                    "min_mmr": st.column_config.NumberColumn("최소 MMR", help="MMR/Ladder 타입의 진입/강등 기준", step=0.1, format="%.1f"),
+                    "max_mmr": st.column_config.NumberColumn("최대 MMR", help="MMR 타입의 승급 기준", step=0.1, format="%.1f"),
                     "demotion_lives": st.column_config.NumberColumn("강등 방어 (Lives)", help="강등 조건 도달 시 버틸 수 있는 패배 횟수 (0=즉시 강등)"),
                     "points_win": st.column_config.NumberColumn("승리 승점", help="Ladder: 승리 시 획득 포인트"),
                     "points_draw": st.column_config.NumberColumn("무승부 승점", help="Ladder: 무승부 시 획득 포인트"),
@@ -614,8 +614,8 @@ else:
                         bulk_tiers.append(safe_create_tier_config(
                             name=str(row["name"]),
                             type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
-                            min_mmr=int(row["min_mmr"]),
-                            max_mmr=int(row["max_mmr"]),
+                            min_mmr=float(row["min_mmr"]),
+                            max_mmr=float(row["max_mmr"]),
                             demotion_lives=int(row["demotion_lives"]),
                             points_win=int(row["points_win"]),
                             points_draw=int(row["points_draw"]),
@@ -643,8 +643,8 @@ else:
                         new_tiers.append(safe_create_tier_config(
                             name=row["name"],
                             type=TierType(row["type"]),
-                            min_mmr=int(row["min_mmr"]),
-                            max_mmr=int(row["max_mmr"]),
+                            min_mmr=float(row["min_mmr"]),
+                            max_mmr=float(row["max_mmr"]),
                             demotion_lives=int(row["demotion_lives"]),
                             points_win=int(row["points_win"]),
                             points_draw=int(row["points_draw"]),
