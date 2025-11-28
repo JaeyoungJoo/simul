@@ -584,6 +584,7 @@ else:
                 },
                 num_rows="dynamic",
                 hide_index=True,
+                use_container_width=True,
                 key="tier_editor_new"
             )
             
@@ -1150,11 +1151,10 @@ else:
                         "Tier": config.name,
                         "Current Users": user_count,
                         "Total Promotions (Out)": proms,
-                        "Total Demotions (In)": dems # Demoted INTO this tier? No, demotion_counts[i] is demoted FROM i?
-                        # My logic: demotion_counts[t_idx] = demoted FROM t_idx to t_idx-1.
+                        "Total Demotions (In)": dems
                     })
                     
-                st.dataframe(pd.DataFrame(rates))
+                st.dataframe(pd.DataFrame(rates), use_container_width=True)
                 
         else:
             st.info("랭크 분석을 보려면 시뮬레이션을 실행하고 티어 설정을 완료하세요.")
