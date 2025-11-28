@@ -1236,15 +1236,49 @@ class FastSimulation:
 
     def _assign_placement_tier(self, user_indices):
         current_mmr = self.mmr[user_indices]
+        
+        # Prepare valid tiers for placement
+        valid_tiers = []
         for t_idx, config in enumerate(self.tier_configs):
             if config.placement_max_mmr > 0:
-                in_range_mask = (current_mmr >= config.placement_min_mmr) & (current_mmr < config.placement_max_mmr)
-                if in_range_mask.any():
-                    target_users = user_indices[in_range_mask]
-                    self.user_tier_index[target_users] = t_idx
-                    self.user_ladder_points[target_users] = 0
-                    # Initialize lives
-                    self.user_demotion_lives[target_users] = config.demotion_lives
+                valid_tiers.append((t_idx, config.placement_min_mmr, config.placement_max_mmr))
+        
+        if not valid_tiers: return
+
+        # Vectorized approach for exact matches (Optimization)
+        # But we need to handle fallback for unmatched.
+        # Let's iterate users for clarity and correctness with fallback.
+        
+        for i, idx in enumerate(user_indices):
+            u_mmr = current_mmr[i]
+            assigned_t_idx = -1
+            min_dist = float('inf')
+            
+            # 1. Try to find exact match
+            for t_idx, p_min, p_max in valid_tiers:
+                if p_min <= u_mmr < p_max:
+                    assigned_t_idx = t_idx
+                    break
+            
+            # 2. If no exact match, find closest
+            if assigned_t_idx == -1:
+                for t_idx, p_min, p_max in valid_tiers:
+                    dist = 0
+                    if u_mmr < p_min:
+                        dist = p_min - u_mmr
+                    elif u_mmr >= p_max:
+                        dist = u_mmr - p_max
+                    
+                    if dist < min_dist:
+                        min_dist = dist
+                        assigned_t_idx = t_idx
+            
+            if assigned_t_idx != -1:
+                self.user_tier_index[idx] = assigned_t_idx
+                self.user_ladder_points[idx] = 0
+                # Initialize lives
+                config = self.tier_configs[assigned_t_idx]
+                self.user_demotion_lives[idx] = config.demotion_lives
 
     def _update_daily_tiers(self):
         for t_idx in range(len(self.tier_configs) - 1, 0, -1):
