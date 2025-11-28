@@ -828,7 +828,8 @@ class FastSimulation:
         mmr_changes = k_factors * (scores - expected)
         
         # Apply MMR
-        self.mmr[user_indices] += mmr_changes
+        # self.mmr[user_indices] += mmr_changes # DISABLED for Bot Matches as per request
+        # Only update points, not MMR.
         
         # Logs
         for i, idx in enumerate(user_indices):
