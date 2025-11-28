@@ -986,8 +986,8 @@ class FastSimulation:
             apply_b = cal_mask_b & (target_dir_b != 0) & (move_dir_b == target_dir_b)
             final_k_b[apply_b] *= self.elo_config.calibration_k_bonus
         
-        new_ra = ra + final_k_a * (scores_a - expected_a)
-        new_rb = rb + final_k_b * ((1 - scores_a) - expected_b)
+        new_ra = np.maximum(0, ra + final_k_a * (scores_a - expected_a))
+        new_rb = np.maximum(0, rb + final_k_b * ((1 - scores_a) - expected_b))
         
         self.mmr[idx_a] = new_ra
         self.mmr[idx_b] = new_rb
