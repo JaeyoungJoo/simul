@@ -428,17 +428,6 @@ else:
 
     # --- Sidebar Configuration ---
     with st.sidebar:
-        with st.expander("기본 설정 (Global Settings)", expanded=True):
-            st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="시뮬레이션에 참여할 총 유저 수입니다.")
-            st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
-            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
-
-            st.session_state.streak_bonus = st.number_input("연승 보너스", value=st.session_state.get("streak_bonus", 1.0), help="연승 시 추가되는 점수 보너스입니다.")
-            st.session_state.streak_threshold = st.number_input("연승 기준", value=st.session_state.get("streak_threshold", 3), help="연승 보너스가 적용되기 시작하는 승리 횟수입니다.")
-            st.session_state.gd_bonus_weight = st.number_input("골 득실 가중치", value=st.session_state.get("gd_bonus_weight", 1.0), help="골 득실 차이에 따른 점수 가중치입니다.")
-            st.session_state.mmr_compression_correction = st.number_input("MMR 압축 보정", value=st.session_state.get("mmr_compression_correction", 0.0), help="MMR 압축 현상을 완화하기 위한 보정값입니다.")
-            
-            st.subheader("배치고사")
             st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10), help="배치고사로 간주되는 초기 경기 수입니다.")
             st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0), help="배치고사 기간 동안 적용되는 K-Factor 보너스 배율입니다.")
             
@@ -513,17 +502,17 @@ else:
                 st.caption("제어판에서 보정 모드를 활성화하면 추가 설정이 표시됩니다.")
 
         # --- Tier Configuration ---
-        if 'tier_config' not in st.session_state or not st.session_state.tier_config:
-            # Default Tiers
-            st.session_state.tier_config = [
-                TierConfig("Bronze", TierType.MMR, 0, 1200, placement_min_mmr=0, placement_max_mmr=1200),
-                TierConfig("Silver", TierType.MMR, 1200, 1400, placement_min_mmr=1200, placement_max_mmr=1400),
-                TierConfig("Gold", TierType.MMR, 1400, 1600, placement_min_mmr=1400, placement_max_mmr=1600),
-                TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100, placement_min_mmr=1600, placement_max_mmr=1800), # Example Ladder
-                TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
-            ]
+    if 'tier_config' not in st.session_state or not st.session_state.tier_config:
+        # Default Tiers
+        st.session_state.tier_config = [
+            TierConfig("Bronze", TierType.MMR, 0, 1200, placement_min_mmr=0, placement_max_mmr=1200),
+            TierConfig("Silver", TierType.MMR, 1200, 1400, placement_min_mmr=1200, placement_max_mmr=1400),
+            TierConfig("Gold", TierType.MMR, 1400, 1600, placement_min_mmr=1400, placement_max_mmr=1600),
+            TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100, placement_min_mmr=1600, placement_max_mmr=1800), # Example Ladder
+            TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
+        ]
 
-        with st.expander("티어 기준 설정 (Tier Config)"):
+    with st.expander("티어 기준 설정 (Tier Config)"):
             st.caption("티어별 승강등 규칙을 설정하세요. 순서는 낮은 티어부터 높은 티어 순입니다.")
             
             # Convert to DataFrame for Editor
@@ -652,7 +641,7 @@ else:
                         st.error(f"티어 설정 저장 중 오류: {e}")
             st.session_state.tier_config = new_tiers
 
-        with st.expander("유저 세그먼트 (티어/실력 분포)"):
+    with st.expander("유저 세그먼트 (티어/실력 분포)"):
             st.write("유저 세그먼트 및 특성을 정의하세요.")
             segment_data = []
             for s in st.session_state.segments:
@@ -700,7 +689,7 @@ else:
                 st.session_state.segments = new_segments
             st.write(f"총 비율 합계: {total_ratio:.4f}")
 
-        with st.expander("시즌 초기화 규칙 (Season End)"):
+    with st.expander("시즌 초기화 규칙 (Season End)"):
             if 'reset_rules' not in st.session_state:
                 st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
             
@@ -745,7 +734,7 @@ else:
                 st.error(f"초기화 규칙 표시 오류: {e}")
                 st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
 
-        if st.button("설정 저장"):
+    if st.button("설정 저장"):
             save_config()
             st.success("설정이 저장되었습니다!")
 
