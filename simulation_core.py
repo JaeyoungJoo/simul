@@ -1072,7 +1072,23 @@ class FastSimulation:
             
             trigger = False
             
-            # Condition 1: Goal Diff
+            if goal_diffs[i] >= config.bot_trigger_goal_diff:
+                trigger = True
+                
+            # Condition 2: Loss Streak
+            # Streak is negative for losses. e.g. -3 <= -3
+            if current_streaks[i] <= -config.bot_trigger_loss_streak:
+                trigger = True
+                
+            if trigger:
+                self.pending_bot_match[idx] = True
+
+    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
+        all_idx = np.concatenate([idx_a, idx_b])
+        res_a = np.zeros(len(idx_a), dtype=int)
+        res_a[win_a] = 1
+        res_a[loss_a] = -1
+        
         res_b = np.zeros(len(idx_b), dtype=int)
         res_b[win_a] = -1
         res_b[loss_a] = 1
