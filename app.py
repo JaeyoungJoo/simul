@@ -1080,25 +1080,43 @@ else:
                             seg_tier = sim.user_tier_index[seg_mask]
                             seg_matches = sim.matches_played[seg_mask]
                             
-                            # Calculate Stats
+                            # Helper to get tier name
+                            def get_tier_name(idx):
+                                idx = int(round(idx))
+                                if idx == -1: return "Unranked"
+                                if sim.tier_configs and 0 <= idx < len(sim.tier_configs):
+                                    return sim.tier_configs[idx].name
+                                return str(idx)
+
+                            min_tier = np.min(seg_tier)
+                            med_tier = np.median(seg_tier)
+                            max_tier = np.max(seg_tier)
+
+                            # Calculate Stats with pre-formatting
                             stats_data = {
-                                "Metric": ["Current MMR", "True Skill", "Tier Index", "Match Count"],
-                                "Min": [np.min(seg_mmr), np.min(seg_ts), np.min(seg_tier), np.min(seg_matches)],
-                                "Median": [np.median(seg_mmr), np.median(seg_ts), np.median(seg_tier), np.median(seg_matches)],
-                                "Max": [np.max(seg_mmr), np.max(seg_ts), np.max(seg_tier), np.max(seg_matches)]
+                                "Metric": ["Current MMR", "True Skill", "Tier", "Match Count"],
+                                "Min": [
+                                    f"{np.min(seg_mmr):.2f}", 
+                                    f"{np.min(seg_ts):.2f}", 
+                                    get_tier_name(min_tier), 
+                                    f"{np.min(seg_matches):.0f}"
+                                ],
+                                "Median": [
+                                    f"{np.median(seg_mmr):.2f}", 
+                                    f"{np.median(seg_ts):.2f}", 
+                                    get_tier_name(med_tier), 
+                                    f"{np.median(seg_matches):.1f}"
+                                ],
+                                "Max": [
+                                    f"{np.max(seg_mmr):.2f}", 
+                                    f"{np.max(seg_ts):.2f}", 
+                                    get_tier_name(max_tier), 
+                                    f"{np.max(seg_matches):.0f}"
+                                ]
                             }
                             
                             df_stats = pd.DataFrame(stats_data)
-                            
-                            # Formatting
-                            st.dataframe(
-                                df_stats.style.format({
-                                    "Min": "{:.2f}",
-                                    "Median": "{:.2f}",
-                                    "Max": "{:.2f}"
-                                }),
-                                use_container_width=True
-                            )
+                            st.dataframe(df_stats, use_container_width=True)
                         else:
                             st.warning("해당 세그먼트에 속한 유저가 없습니다.")
                     else:
