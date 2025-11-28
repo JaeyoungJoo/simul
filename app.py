@@ -1054,6 +1054,55 @@ else:
                     
                     df_logs = pd.DataFrame(log_data)
                     st.dataframe(df_logs)
+
+                    # --- Segment Statistics ---
+                    st.markdown(f"#### '{selected_segment}' 세그먼트 전체 통계")
+                    
+                    # Identify all users in this segment
+                    # sim.segment_indices maps user_idx -> segment_index
+                    # We need to find which segment index corresponds to the name 'selected_segment'
+                    # sim.seg_names stores names by segment index
+                    
+                    seg_idx = -1
+                    if hasattr(sim, 'seg_names'):
+                        try:
+                            seg_idx = sim.seg_names.index(selected_segment)
+                        except ValueError:
+                            pass
+                    
+                    if seg_idx != -1:
+                        # Filter users
+                        seg_mask = (sim.segment_indices == seg_idx)
+                        
+                        if seg_mask.any():
+                            seg_mmr = sim.mmr[seg_mask]
+                            seg_ts = sim.true_skill[seg_mask]
+                            seg_tier = sim.user_tier_index[seg_mask]
+                            seg_matches = sim.matches_played[seg_mask]
+                            
+                            # Calculate Stats
+                            stats_data = {
+                                "Metric": ["Current MMR", "True Skill", "Tier Index", "Match Count"],
+                                "Min": [np.min(seg_mmr), np.min(seg_ts), np.min(seg_tier), np.min(seg_matches)],
+                                "Median": [np.median(seg_mmr), np.median(seg_ts), np.median(seg_tier), np.median(seg_matches)],
+                                "Max": [np.max(seg_mmr), np.max(seg_ts), np.max(seg_tier), np.max(seg_matches)]
+                            }
+                            
+                            df_stats = pd.DataFrame(stats_data)
+                            
+                            # Formatting
+                            st.dataframe(
+                                df_stats.style.format({
+                                    "Min": "{:.2f}",
+                                    "Median": "{:.2f}",
+                                    "Max": "{:.2f}"
+                                }),
+                                use_container_width=True
+                            )
+                        else:
+                            st.warning("해당 세그먼트에 속한 유저가 없습니다.")
+                    else:
+                        st.warning("세그먼트 인덱스를 찾을 수 없습니다.")
                     
                     # Rank History Chart
                     if sim.tier_configs:
