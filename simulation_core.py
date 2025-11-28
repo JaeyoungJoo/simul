@@ -37,21 +37,10 @@ class TierConfig:
     placement_min_mmr: int = 0
     placement_max_mmr: int = 0
 
-@dataclass
-class MatchLog:
-    day: int
-    hour: int
-    opponent_id: int
-    opponent_mmr: float
-    opponent_true_skill: float
-    result: str # 'Win', 'Loss', 'Draw'
-    result_type: str # 'Regular', 'Extra', 'PK'
-    goal_diff: int
-    mmr_change: float
-    current_mmr: float
-    current_tier_index: int = 0
-    current_ladder_points: int = 0
-    match_count: int = 0
+    # Bot Match specific
+    bot_match_enabled: bool = False
+    bot_trigger_goal_diff: int = 99
+    bot_trigger_loss_streak: int = 99
 
 # ... (FastSimulation class definition remains unchanged) ...
 
@@ -205,6 +194,23 @@ class MatchConfig:
     prob_pk: float = 0.5 # If draw in Extra Time, prob to go to PK
     max_goal_diff: int = 5
     matchmaking_jitter: float = 50.0 # Standard deviation of noise added to MMR for sorting
+    bot_win_rate: float = 0.8 # Probability of user winning against bot
+
+@dataclass
+class MatchLog:
+    day: int
+    hour: int
+    opponent_id: int
+    opponent_mmr: float
+    opponent_true_skill: float
+    result: str # 'Win', 'Loss', 'Draw'
+    result_type: str # 'Regular', 'Extra', 'PK'
+    goal_diff: int
+    mmr_change: float
+    current_mmr: float
+    current_tier_index: int = 0
+    current_ladder_points: int = 0
+    match_count: int = 0
 
 @dataclass
 class User:
@@ -580,7 +586,7 @@ class FastSimulation:
         self.day = 0
         
         self.ids = np.arange(num_users)
-        self.mmr = np.full(num_users, self.initial_mmr)
+        self.mmr = np.full(num_users, self.initial_mmr, dtype=float)
         self.true_skill = np.zeros(num_users)
         self.wins = np.zeros(num_users, dtype=int)
         self.losses = np.zeros(num_users, dtype=int)
@@ -602,6 +608,9 @@ class FastSimulation:
         # Stats Tracking
         self.promotion_counts = {} # {tier_idx: count}
         self.demotion_counts = {} # {tier_idx: count}
+        
+        # Bot Match Tracking
+        self.pending_bot_match = np.zeros(num_users, dtype=bool)
         
         # Initialize Tiers based on Initial MMR (Only if no placement matches)
         if self.tier_configs and self.elo_config.placement_matches == 0:
@@ -701,6 +710,18 @@ class FastSimulation:
         rand_probs = np.random.rand(self.num_users)
         user_thresholds = self.seg_daily_prob[self.segment_indices]
         active_mask = rand_probs < user_thresholds
+        
+        # --- Bot Match Processing ---
+        # Users who are active AND have a pending bot match
+        bot_match_mask = active_mask & self.pending_bot_match
+        if bot_match_mask.any():
+            bot_indices = self.ids[bot_match_mask]
+            self._simulate_bot_matches(bot_indices)
+            
+            # Exclude them from regular matchmaking
+            # Use bot_match_mask because pending_bot_match might have been cleared if they won
+            active_mask = active_mask & ~bot_match_mask
+            
         active_indices = self.ids[active_mask]
         
         if len(active_indices) < 2:
@@ -756,6 +777,114 @@ class FastSimulation:
             
         if self.tier_configs:
             self._update_daily_tiers()
+
+    def _simulate_bot_matches(self, user_indices):
+        n = len(user_indices)
+        if n == 0: return
+        
+        # Determine Outcomes
+        win_probs = np.full(n, self.match_config.bot_win_rate)
+        rands = np.random.rand(n)
+        wins = rands < win_probs
+        losses = ~wins
+        
+        # Bot Stats (Virtual)
+        bot_id = -999
+        
+        # Update User Stats
+        self.matches_played[user_indices] += 1
+        self.wins[user_indices[wins]] += 1
+        self.losses[user_indices[losses]] += 1
+        
+        # Streak Update
+        self.streak[user_indices[wins]] = np.where(self.streak[user_indices[wins]] > 0, self.streak[user_indices[wins]] + 1, 1)
+        self.streak[user_indices[losses]] = np.where(self.streak[user_indices[losses]] < 0, self.streak[user_indices[losses]] - 1, -1)
+        
+        # MMR/Points Update (Simplified for Bot)
+        # Assume Bot has same MMR as User for fair calculation, or just give fixed points?
+        # Let's use standard ELO with Bot having User's MMR -> Expected 0.5
+        # But User wins with high prob.
+        
+        user_mmrs = self.mmr[user_indices]
+        user_ts = self.true_skill[user_indices]
+        
+        # Bot Parameters
+        bot_mmr = user_mmrs.copy() # Even match
+        
+        # Calculate K
+        # Reuse get_k logic? It's inside run_day... let's duplicate or simplify.
+        # Simplified K for now: Base K
+        k_factors = np.full(n, self.elo_config.base_k, dtype=float)
+        
+        # Expected score is 0.5 since MMRs are equal
+        expected = 0.5
+        
+        # Actual Score
+        scores = np.zeros(n)
+        scores[wins] = 1.0
+        scores[losses] = 0.0
+        
+        # MMR Change
+        mmr_changes = k_factors * (scores - expected)
+        
+        # Apply MMR
+        self.mmr[user_indices] += mmr_changes
+        
+        # Logs
+        for i, idx in enumerate(user_indices):
+            res = "Win" if wins[i] else "Loss"
+            change = mmr_changes[i]
+            
+            # Log for watched users
+            if idx in self.watched_indices:
+                self.match_logs[idx].append(MatchLog(
+                    day=self.day, hour=12, opponent_id=bot_id, opponent_mmr=bot_mmr[i],
+                    opponent_true_skill=bot_mmr[i], # Bot TS = Bot MMR
+                    result=res, result_type='Regular', goal_diff=1 if wins[i] else -1,
+                    mmr_change=change, current_mmr=self.mmr[idx],
+                    current_tier_index=self.user_tier_index[idx],
+                    current_ladder_points=self.user_ladder_points[idx],
+                    match_count=self.matches_played[idx]
+                ))
+        
+        # Tier Updates (Points)
+        # We need to call _process_tier_updates-like logic or just do it here manually for these users.
+        # Reusing _process_tier_updates is hard because it expects paired arrays.
+        # Let's do a simplified point update here.
+        
+        current_tiers = self.user_tier_index[user_indices]
+        
+        for i, idx in enumerate(user_indices):
+            t_idx = current_tiers[i]
+            if t_idx == -1 or t_idx >= len(self.tier_configs): continue
+            
+            config = self.tier_configs[t_idx]
+            
+            # Points
+            p_change = 0
+            if config.type == TierType.LADDER:
+                if wins[i]: p_change = config.points_win
+                else: p_change = 0 # Loss usually 0 in Ladder? Or negative? 
+                # Wait, standard ladder usually has no points for loss? 
+                # Let's assume 0 for now unless defined otherwise.
+                # Actually, in _process_tier_updates:
+                # points_change[results == 1] = config.points_win
+                # points_change[results == 0] = config.points_draw
+                # Loss is 0.
+                pass
+            elif config.type == TierType.MMR:
+                p_change = mmr_changes[i] * self.point_convergence_rate
+                if p_change < 0 and getattr(config, 'loss_point_correction', 1.0) != 1.0:
+                    p_change *= getattr(config, 'loss_point_correction', 1.0)
+            
+            self.user_ladder_points[idx] += int(p_change)
+            
+            # Bot Match Flag Update
+            if wins[i]:
+                self.pending_bot_match[idx] = False
+            else:
+                self.pending_bot_match[idx] = True # Retry
+
 
     def _process_matches(self, idx_a, idx_b):
         ra = self.mmr[idx_a]
@@ -933,6 +1062,45 @@ class FastSimulation:
             change_a = new_ra - ra
             change_b = new_rb - rb
             self._process_tier_updates(idx_a, idx_b, final_win_a, final_draw, final_loss_a, change_a, change_b)
+
+        # --- Bot Match Triggers ---
+        if self.tier_configs:
+            # Check triggers for Losers (idx_b where A won, idx_a where A lost)
+            
+            # 1. A Won (B Lost)
+            losers_b = idx_b[final_win_a]
+            if len(losers_b) > 0:
+                self._check_bot_triggers(losers_b, goal_diff[final_win_a])
+                
+            # 2. A Lost (B Won)
+            losers_a = idx_a[final_loss_a]
+            if len(losers_a) > 0:
+                self._check_bot_triggers(losers_a, goal_diff[final_loss_a])
+
+    def _check_bot_triggers(self, user_indices, goal_diffs):
+        current_tiers = self.user_tier_index[user_indices]
+        current_streaks = self.streak[user_indices] # Should be negative
+        
+        for i, idx in enumerate(user_indices):
+            t_idx = current_tiers[i]
+            if t_idx == -1 or t_idx >= len(self.tier_configs): continue
+            
+            config = self.tier_configs[t_idx]
+            if not config.bot_match_enabled: continue
+            
+            trigger = False
+            
+            # Condition 1: Goal Diff
+            if goal_diffs[i] >= config.bot_trigger_goal_diff:
+                trigger = True
+                
+            # Condition 2: Loss Streak
+            # Streak is negative for losses. e.g. -3 <= -3
+            if current_streaks[i] <= -config.bot_trigger_loss_streak:
+                trigger = True
+                
+            if trigger:
+                self.pending_bot_match[idx] = True
 
     def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
         all_idx = np.concatenate([idx_a, idx_b])

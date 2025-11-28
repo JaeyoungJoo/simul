@@ -169,7 +169,10 @@ def save_config():
                 "placement_max_mmr": t.placement_max_mmr,
                 "promotion_points_low": getattr(t, "promotion_points_low", t.promotion_points),
                 "promotion_points_high": getattr(t, "promotion_points_high", t.promotion_points),
-                "loss_point_correction": getattr(t, "loss_point_correction", 1.0)
+                "loss_point_correction": getattr(t, "loss_point_correction", 1.0),
+                "bot_match_enabled": getattr(t, "bot_match_enabled", False),
+                "bot_trigger_goal_diff": getattr(t, "bot_trigger_goal_diff", 99),
+                "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99)
             } for t in st.session_state.get("tier_config", [])
         ],
         # Segments (Serialize)
@@ -393,7 +396,10 @@ else:
                                     placement_max_mmr=t.get("placement_max_mmr", t.get("max_mmr", 0)),
                                     promotion_points_low=t.get("promotion_points_low", t.get("promotion_points", 100)),
                                     promotion_points_high=t.get("promotion_points_high", t.get("promotion_points", 100)),
-                                    loss_point_correction=t.get("loss_point_correction", 1.0)
+                                    loss_point_correction=t.get("loss_point_correction", 1.0),
+                                    bot_match_enabled=t.get("bot_match_enabled", False),
+                                    bot_trigger_goal_diff=t.get("bot_trigger_goal_diff", 99),
+                                    bot_trigger_loss_streak=t.get("bot_trigger_loss_streak", 99)
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
@@ -427,17 +433,6 @@ else:
             st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
             st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
 
-        with st.expander("매치 설정 (Match Configuration)"):
-            st.session_state.draw_prob = st.slider("무승부 확률 (정규 시간)", 0.0, 0.5, st.session_state.get("draw_prob", 0.1), help="정규 시간 내에 무승부가 발생할 확률입니다.")
-            st.session_state.prob_et = st.slider("연장전 확률 (무승부 시)", 0.0, 1.0, st.session_state.get("prob_et", 0.2), help="무승부 시 연장전으로 갈 확률입니다.")
-            st.session_state.prob_pk = st.slider("승부차기 확률 (연장 무승부 시)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5), help="연장전에서도 승부가 나지 않아 승부차기로 갈 확률입니다.")
-            st.session_state.max_goal_diff = st.slider("최대 골 득실차", 1, 10, st.session_state.get("max_goal_diff", 5), help="경기에서 발생할 수 있는 최대 골 득실차입니다.")
-            st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (MMR Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0), help="매칭 시 허용되는 MMR 차이 범위입니다.")
-
-        with st.expander("ELO 시스템 설정"):
-            st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 32), help="ELO 계산에 사용되는 기본 K-Factor입니다.")
-            st.session_state.max_k = st.number_input("최대 K-Factor", value=st.session_state.get("max_k", 64), help="K-Factor가 가질 수 있는 최대값입니다.")
-            st.session_state.placement_k_factor = st.number_input("배치고사 K-Factor", value=st.session_state.get("placement_k_factor", 64), help="배치고사 기간 동안 적용되는 K-Factor입니다.")
             st.session_state.streak_bonus = st.number_input("연승 보너스", value=st.session_state.get("streak_bonus", 1.0), help="연승 시 추가되는 점수 보너스입니다.")
             st.session_state.streak_threshold = st.number_input("연승 기준", value=st.session_state.get("streak_threshold", 3), help="연승 보너스가 적용되기 시작하는 승리 횟수입니다.")
             st.session_state.gd_bonus_weight = st.number_input("골 득실 가중치", value=st.session_state.get("gd_bonus_weight", 1.0), help="골 득실 차이에 따른 점수 가중치입니다.")
@@ -548,7 +543,10 @@ else:
                     "placement_max_mmr": getattr(t, "placement_max_mmr", 0),
                     "promotion_points_low": getattr(t, "promotion_points_low", getattr(t, "promotion_points", 100)),
                     "promotion_points_high": getattr(t, "promotion_points_high", getattr(t, "promotion_points", 100)),
-                    "loss_point_correction": getattr(t, "loss_point_correction", 1.0)
+                    "loss_point_correction": getattr(t, "loss_point_correction", 1.0),
+                    "bot_match_enabled": getattr(t, "bot_match_enabled", False),
+                    "bot_trigger_goal_diff": getattr(t, "bot_trigger_goal_diff", 99),
+                    "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99)
                 })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -569,7 +567,10 @@ else:
                     "capacity": st.column_config.NumberColumn("정원 (Ratio)", help="Ratio: 상위 N명 (절대값)"),
                     "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정"),
                     "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정"),
-                    "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", help="MMR 타입: 패배 시 포인트 차감 비율 (1.0=100%, 0.5=50% 차감)", min_value=0.0, max_value=2.0, step=0.1)
+                    "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", help="MMR 타입: 패배 시 포인트 차감 비율 (1.0=100%, 0.5=50% 차감)", min_value=0.0, max_value=2.0, step=0.1),
+                    "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치 사용", help="조건 만족 시 봇 매치 활성화"),
+                    "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)", help="이 점수차 이상으로 패배 시 봇 매치 발동", min_value=1, step=1),
+                    "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)", help="이 횟수만큼 연속 패배 시 봇 매치 발동", min_value=1, step=1)
                 },
                 num_rows="dynamic",
                 hide_index=True,
@@ -584,13 +585,15 @@ else:
                 "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
                 "승급 포인트 (Low)": "promotion_points_low", "승급 포인트 (High)": "promotion_points_high",
                 "패배 포인트 보정": "loss_point_correction",
+                "봇 매치 사용": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak",
                 # English keys just in case
                 "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
                 "demotion_lives": "demotion_lives", "points_win": "points_win", "points_draw": "points_draw",
                 "promotion_points": "promotion_points", "capacity": "capacity",
                 "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
                 "promotion_points_low": "promotion_points_low", "promotion_points_high": "promotion_points_high",
-                "loss_point_correction": "loss_point_correction"
+                "loss_point_correction": "loss_point_correction",
+                "bot_match_enabled": "bot_match_enabled", "bot_trigger_goal_diff": "bot_trigger_goal_diff", "bot_trigger_loss_streak": "bot_trigger_loss_streak"
             }
             new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
             if new_tier_df is not None:
@@ -611,7 +614,10 @@ else:
                             placement_max_mmr=int(row.get("placement_max_mmr", 0)),
                             promotion_points_low=int(row.get("promotion_points_low", row["promotion_points"])),
                             promotion_points_high=int(row.get("promotion_points_high", row["promotion_points"])),
-                            loss_point_correction=float(row.get("loss_point_correction", 1.0))
+                            loss_point_correction=float(row.get("loss_point_correction", 1.0)),
+                            bot_match_enabled=bool(row.get("bot_match_enabled", False)),
+                            bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
+                            bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
                         ))
                     st.session_state.tier_config = bulk_tiers
                     st.rerun()
@@ -637,7 +643,10 @@ else:
                             placement_max_mmr=int(row["placement_max_mmr"]),
                             promotion_points_low=int(row["promotion_points_low"]),
                             promotion_points_high=int(row["promotion_points_high"]),
-                            loss_point_correction=float(row["loss_point_correction"])
+                            loss_point_correction=float(row["loss_point_correction"]),
+                            bot_match_enabled=bool(row.get("bot_match_enabled", False)),
+                            bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
+                            bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
                         ))
                     except Exception as e:
                         st.error(f"티어 설정 저장 중 오류: {e}")
@@ -774,7 +783,8 @@ else:
                         prob_extra_time=st.session_state.prob_et,
                         prob_pk=st.session_state.prob_pk,
                         max_goal_diff=st.session_state.max_goal_diff,
-                        matchmaking_jitter=st.session_state.matchmaking_jitter
+                        matchmaking_jitter=st.session_state.matchmaking_jitter,
+                        bot_win_rate=st.session_state.bot_win_rate
                     )
                     
                     # Ensure segments are objects
