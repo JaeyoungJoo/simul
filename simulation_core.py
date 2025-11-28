@@ -848,14 +848,7 @@ class FastSimulation:
                     match_count=self.matches_played[idx]
                 ))
         
-        # Tier Updates (Points)
-        # We need to call _process_tier_updates-like logic or just do it here manually for these users.
-        # Reusing _process_tier_updates is hard because it expects paired arrays.
-        # Let's do a simplified point update here.
-        
-        current_tiers = self.user_tier_index[user_indices]
-        
-        for i, idx in enumerate(user_indices):
+
             t_idx = current_tiers[i]
             if t_idx == -1 or t_idx >= len(self.tier_configs): continue
             
@@ -865,13 +858,7 @@ class FastSimulation:
             p_change = 0
             if config.type == TierType.LADDER:
                 if wins[i]: p_change = config.points_win
-                else: p_change = 0 # Loss usually 0 in Ladder? Or negative? 
-                # Wait, standard ladder usually has no points for loss? 
-                # Let's assume 0 for now unless defined otherwise.
-                # Actually, in _process_tier_updates:
-                # points_change[results == 1] = config.points_win
-                # points_change[results == 0] = config.points_draw
-                # Loss is 0.
+                else: p_change = 0 
                 pass
             elif config.type == TierType.MMR:
                 p_change = mmr_changes[i] * self.point_convergence_rate
@@ -879,12 +866,6 @@ class FastSimulation:
                     p_change *= getattr(config, 'loss_point_correction', 1.0)
             
             self.user_ladder_points[idx] += int(p_change)
-            
-            # Bot Match Flag Update
-            if wins[i]:
-                self.pending_bot_match[idx] = False
-            else:
-                self.pending_bot_match[idx] = True # Retry
 
 
     def _process_matches(self, idx_a, idx_b):
@@ -1092,23 +1073,6 @@ class FastSimulation:
             trigger = False
             
             # Condition 1: Goal Diff
-            if goal_diffs[i] >= config.bot_trigger_goal_diff:
-                trigger = True
-                
-            # Condition 2: Loss Streak
-            # Streak is negative for losses. e.g. -3 <= -3
-            if current_streaks[i] <= -config.bot_trigger_loss_streak:
-                trigger = True
-                
-            if trigger:
-                self.pending_bot_match[idx] = True
-
-    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
-        all_idx = np.concatenate([idx_a, idx_b])
-        res_a = np.zeros(len(idx_a), dtype=int)
-        res_a[win_a] = 1
-        res_a[loss_a] = -1
-        
         res_b = np.zeros(len(idx_b), dtype=int)
         res_b[win_a] = -1
         res_b[loss_a] = 1
