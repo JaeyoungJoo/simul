@@ -34,8 +34,8 @@ class TierConfig:
     capacity: int = 0 # Absolute number of users (e.g., 100)
 
     # Placement specific
-    placement_min_mmr: int = 0
-    placement_max_mmr: int = 0
+    placement_min_mmr: float = 0.0
+    placement_max_mmr: float = 0.0
 
     # Bot Match specific
     bot_match_enabled: bool = False
