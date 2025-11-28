@@ -428,6 +428,27 @@ else:
 
     # --- Sidebar Configuration ---
     with st.sidebar:
+        with st.expander("기본 설정 (Global Settings)", expanded=True):
+            st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="시뮬레이션에 참여할 총 유저 수입니다.")
+            st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
+            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
+
+        with st.expander("매치 설정 (Match Configuration)"):
+            st.session_state.draw_prob = st.slider("무승부 확률 (Draw Prob)", 0.0, 0.5, st.session_state.get("draw_prob", 0.15), help="정규 시간 내 무승부 확률입니다.")
+            st.session_state.prob_et = st.slider("연장전 확률 (Extra Time Prob)", 0.0, 1.0, st.session_state.get("prob_et", 0.2), help="무승부 시 연장전으로 갈 확률입니다.")
+            st.session_state.prob_pk = st.slider("승부차기 확률 (PK Prob)", 0.0, 1.0, st.session_state.get("prob_pk", 0.5), help="연장전 무승부 시 승부차기로 갈 확률입니다.")
+            st.session_state.max_goal_diff = st.number_input("최대 골 득실", min_value=1, value=st.session_state.get("max_goal_diff", 5), help="경기에서 발생할 수 있는 최대 골 득실 차이입니다.")
+            st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0), help="매칭 시 MMR 검색 범위의 표준편차입니다.")
+            st.session_state.bot_win_rate = st.slider("봇 매치 승률 (Bot Win Rate)", 0.0, 1.0, st.session_state.get("bot_win_rate", 0.8), help="봇 매치 시 유저가 승리할 확률입니다.")
+
+        with st.expander("ELO 설정 (ELO Configuration)"):
+            st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 20.0), help="ELO 점수 변동폭의 기본값입니다.")
+            st.session_state.streak_bonus = st.number_input("연승 보너스", value=st.session_state.get("streak_bonus", 1.0), help="연승 시 추가되는 점수 보너스입니다.")
+            st.session_state.streak_threshold = st.number_input("연승 기준", value=st.session_state.get("streak_threshold", 3), help="연승 보너스가 적용되기 시작하는 승리 횟수입니다.")
+            st.session_state.gd_bonus_weight = st.number_input("골 득실 가중치", value=st.session_state.get("gd_bonus_weight", 1.0), help="골 득실 차이에 따른 점수 가중치입니다.")
+            st.session_state.mmr_compression_correction = st.number_input("MMR 압축 보정", value=st.session_state.get("mmr_compression_correction", 0.0), help="MMR 압축 현상을 완화하기 위한 보정값입니다.")
+            
+            st.subheader("배치고사")
             st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10), help="배치고사로 간주되는 초기 경기 수입니다.")
             st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0), help="배치고사 기간 동안 적용되는 K-Factor 보너스 배율입니다.")
             
