@@ -849,6 +849,13 @@ class FastSimulation:
                 ))
         
 
+        for i, idx in enumerate(user_indices):
+            # Bot Match Flag Update (Must run for all users, including Unranked)
+            if wins[i]:
+                self.pending_bot_match[idx] = False
+            else:
+                self.pending_bot_match[idx] = True # Retry
+
             t_idx = current_tiers[i]
             if t_idx == -1 or t_idx >= len(self.tier_configs): continue
             
