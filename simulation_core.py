@@ -848,6 +848,7 @@ class FastSimulation:
                     match_count=self.matches_played[idx]
                 ))
         
+        current_tiers = self.user_tier_index[user_indices]
 
         for i, idx in enumerate(user_indices):
             # Bot Match Flag Update (Must run for all users, including Unranked)
