@@ -1525,13 +1525,29 @@ else:
                             total_valid = len(valid_outcomes)
                             
                             if total_valid > 0:
-                                # Convert to string patterns for counting
-                                # 1 -> 승, 0 -> 무, -1 -> 패
-                                pattern_map = {1: "승", 0: "무", -1: "패"}
-                                
+                                # Group by counts (Win/Draw/Loss)
                                 patterns = []
                                 for row in valid_outcomes:
-                                    p_str = "".join([pattern_map[x] for x in row])
+                                    wins = np.sum(row == 1)
+                                    draws = np.sum(row == 0)
+                                    losses = np.sum(row == -1)
+                                    
+                                    # Format: "X승 Y무 Z패" (omit 0 counts if preferred, but user asked for "1승 2패")
+                                    # Let's show all non-zero or just standard format?
+                                    # User example: "승승승 10% / 승무패 5% / 승패패 1%" -> "3승", "1승 1무 1패", "1승 2패"
+                                    # Let's use full format for clarity: "X승 Y무 Z패"
+                                    # Or maybe cleaner: "X승 Y패" if draws 0.
+                                    
+                                    parts = []
+                                    if wins > 0: parts.append(f"{wins}승")
+                                    if draws > 0: parts.append(f"{draws}무")
+                                    if losses > 0: parts.append(f"{losses}패")
+                                    
+                                    if not parts:
+                                        p_str = "0승 0무 0패" # Should not happen with valid logic
+                                    else:
+                                        p_str = " ".join(parts)
+                                        
                                     patterns.append(p_str)
                                 
                                 # Count
@@ -1546,15 +1562,15 @@ else:
                                     
                                     # Create DataFrame for display
                                     df_patterns = pd.DataFrame({
-                                        "패턴 (Pattern)": pattern_counts.index,
+                                        "결과 (Result)": pattern_counts.index,
                                         "유저 수 (Count)": pattern_counts.values,
                                         "비율 (%)": pattern_pct.values
                                     })
                                     st.dataframe(df_patterns, use_container_width=True)
                                     
                                 with col_b:
-                                    fig_pat = px.pie(df_patterns, values='유저 수 (Count)', names='패턴 (Pattern)', 
-                                                     title="초반 3경기 결과 분포")
+                                    fig_pat = px.pie(df_patterns, values='유저 수 (Count)', names='결과 (Result)', 
+                                                     title="초반 3경기 결과 분포 (합산)")
                                     st.plotly_chart(fig_pat, use_container_width=True)
                             else:
                                 st.info("해당 세그먼트에 3경기를 완료한 유저가 없습니다.")
