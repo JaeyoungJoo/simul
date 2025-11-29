@@ -137,6 +137,16 @@ def load_config(current_username=None):
             if not user_config.empty:
                 target_config_json = user_config.iloc[0]["ConfigJSON"]
         
+            if not user_config.empty:
+                target_config_json = user_config.iloc[0]["ConfigJSON"]
+                
+                # Load comment from column if available
+                if "Comment" in user_config.columns:
+                    comment_val = user_config.iloc[0]["Comment"]
+                    if pd.notna(comment_val):
+                        # We will inject this into the loaded config later
+                        pass
+        
         # 2. If no user config (or not logged in), try to find Default (Admin) config
         if not target_config_json:
             # We need to find who is admin. This requires reading Users sheet again.
@@ -180,7 +190,22 @@ def load_config(current_username=None):
                      target_config_json = df.iloc[0]["ConfigJSON"]
         
         if target_config_json:
-            return json.loads(target_config_json)
+            config_dict = json.loads(target_config_json)
+            
+            # Inject Comment from column if it exists and we found a user config
+            if current_username and "username" in df.columns:
+                 # Re-find user row to get comment (redundant but safe)
+                 # Normalize for comparison
+                df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+                target_user_norm = str(current_username).strip().lower()
+                user_config = df[df["username_norm"] == target_user_norm]
+                
+                if not user_config.empty and "Comment" in user_config.columns:
+                    comment_val = user_config.iloc[0]["Comment"]
+                    if pd.notna(comment_val):
+                        config_dict["user_comments"] = str(comment_val)
+            
+            return config_dict
             
         return {}
     except Exception as e:
@@ -269,6 +294,9 @@ def save_config(current_username=None):
         "user_comments": st.session_state.get("user_comments", "")
     }
     
+    # Extract comment for separate column
+    user_comment_text = config.get("user_comments", "")
+    
     # Save to Google Sheets
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -296,7 +324,7 @@ def save_config(current_username=None):
                         target_worksheet = "Simul_Config"
             
         json_str = json.dumps(config)
-        new_row = {"username": current_username, "ConfigJSON": json_str}
+        new_row = {"username": current_username, "ConfigJSON": json_str, "Comment": user_comment_text}
         
         if df.empty:
             df_to_save = pd.DataFrame([new_row])
@@ -312,6 +340,7 @@ def save_config(current_username=None):
                     # Find index
                     idx = df.index[df["username_norm"] == target_user_norm].tolist()[0]
                     df.at[idx, "ConfigJSON"] = json_str
+                    df.at[idx, "Comment"] = user_comment_text
                     # Drop temp column
                     df = df.drop(columns=["username_norm"])
                     df_to_save = df
