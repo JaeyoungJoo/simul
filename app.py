@@ -99,7 +99,16 @@ CONFIG_FILE = "sim_config.json"
 def load_config(current_username=None):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Config", ttl=0) # Explicitly read 'Config' worksheet with no cache
+        # Read Config with fallback
+        df = pd.DataFrame()
+        try:
+            df = conn.read(worksheet="Config", ttl=0)
+        except:
+            try:
+                df = conn.read(worksheet="config", ttl=0)
+            except Exception as e:
+                st.error(f"설정 시트 로드 실패: {e}")
+                return {}
         
         if df.empty:
             return {}
@@ -260,10 +269,16 @@ def save_config(current_username=None):
         conn = st.connection("gsheets", type=GSheetsConnection)
         
         # Read existing to preserve other users
+        df = pd.DataFrame()
+        target_worksheet = "Config"
         try:
             df = conn.read(worksheet="Config", ttl=0)
         except:
-            df = pd.DataFrame()
+            try:
+                df = conn.read(worksheet="config", ttl=0)
+                target_worksheet = "config"
+            except:
+                df = pd.DataFrame()
             
         json_str = json.dumps(config)
         new_row = {"username": current_username, "ConfigJSON": json_str}
@@ -297,7 +312,7 @@ def save_config(current_username=None):
                 # Let's just append.
                 df_to_save = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 
-        conn.update(worksheet="Config", data=df_to_save)
+        conn.update(worksheet=target_worksheet, data=df_to_save)
         st.toast("설정이 저장되었습니다!")
     except Exception as e:
         st.error(f"설정 저장 실패: {e}")
@@ -473,8 +488,21 @@ else:
         if st.button("데이터베이스 진단 (Debug DB)", key="debug_db_btn"):
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
-                df = conn.read(worksheet="Config", ttl=0)
-                st.write("--- 데이터베이스 진단 결과 ---")
+                df = pd.DataFrame()
+                try:
+                    df = conn.read(worksheet="Config", ttl=0)
+                    st.success("워크시트 'Config' 로드 성공")
+                except Exception as e1:
+                    st.warning(f"'Config' 시트 로드 실패: {e1}")
+                    try:
+                        df = conn.read(worksheet="config", ttl=0)
+                        st.success("워크시트 'config' (소문자) 로드 성공")
+                    except Exception as e2:
+                        st.error(f"모든 시트 로드 실패. 오류: {e2}")
+                        st.exception(e2)
+                        
+                if not df.empty:
+                    st.write("--- 데이터베이스 진단 결과 ---")
                 st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
                 
                 # Normalize
