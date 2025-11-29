@@ -530,38 +530,58 @@ else:
                                     df = conn.read(ttl=0)
                                     st.success("기본 시트 로드 성공!")
                                     st.write(f"기본 시트 컬럼: {df.columns.tolist()}")
-                                    st.warning("이 시트가 설정 시트라면, 탭 이름을 'Simul_Config'로 변경해 주세요.")
-                                except Exception as e5:
                                     st.error(f"기본 시트 로드도 실패: {e5}")
                                 st.exception(e4)
                         
                 if not df.empty:
-                    st.write("--- 데이터베이스 진단 결과 ---")
-                st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
-                
-                # Normalize
-                df.columns = [str(c).strip() for c in df.columns]
-                if "username" in df.columns:
-                    df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
-                    current_user = st.session_state.get("username", "").strip().lower()
-                    st.write(f"2. 현재 접속 계정: '{current_user}'")
+                    st.write("--- 데이터베이스 진단 결과 (설정) ---")
+                    st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
                     
-                    user_row = df[df["username_norm"] == current_user]
-                    if not user_row.empty:
-                        st.success(f"3. 계정 데이터 발견됨! (행 번호: {user_row.index[0]})")
-                        json_data = user_row.iloc[0].get("ConfigJSON")
-                        st.text(f"4. JSON 데이터 미리보기:\n{str(json_data)[:200]}...")
-                        try:
-                            json.loads(json_data)
-                            st.success("5. JSON 파싱 성공: 데이터 형식이 올바릅니다.")
-                        except Exception as e:
-                            st.error(f"5. JSON 파싱 실패: {e}")
+                    # Normalize
+                    df.columns = [str(c).strip() for c in df.columns]
+                    if "username" in df.columns:
+                        df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+                        current_user = st.session_state.get("username", "").strip().lower()
+                        st.write(f"2. 현재 접속 계정: '{current_user}'")
+                        
+                        user_row = df[df["username_norm"] == current_user]
+                        if not user_row.empty:
+                            st.success(f"3. 계정 데이터 발견됨! (행 번호: {user_row.index[0]})")
+                            json_data = user_row.iloc[0].get("ConfigJSON")
+                            st.text(f"4. JSON 데이터 미리보기:\n{str(json_data)[:200]}...")
+                            try:
+                                json.loads(json_data)
+                                st.success("5. JSON 파싱 성공: 데이터 형식이 올바릅니다.")
+                            except Exception as e:
+                                st.error(f"5. JSON 파싱 실패: {e}")
+                        else:
+                            st.error(f"3. 계정 데이터 없음: '{current_user}'와 일치하는 행을 찾지 못했습니다.")
+                            st.write(f"   (DB에 존재하는 유저 목록: {df['username_norm'].unique().tolist()})")
                     else:
-                        st.error(f"3. 계정 데이터 없음: '{current_user}'와 일치하는 행을 찾지 못했습니다.")
-                        st.write(f"   (DB에 존재하는 유저 목록: {df['username_norm'].unique().tolist()})")
-                else:
-                    st.error("오류: 'username' 컬럼이 시트에 없습니다.")
-                st.dataframe(df.head())
+                        st.error("오류: 'username' 컬럼이 시트에 없습니다.")
+                    st.dataframe(df.head())
+                    
+                # Debug Users Sheet
+                st.write("--- 데이터베이스 진단 결과 (유저) ---")
+                try:
+                    users_df = conn.read(worksheet="username", ttl=0)
+                    st.success("워크시트 'username' 로드 성공")
+                except:
+                    try:
+                        users_df = conn.read(worksheet="Users", ttl=0)
+                        st.success("워크시트 'Users' 로드 성공")
+                    except:
+                        try:
+                            users_df = conn.read(worksheet="users", ttl=0)
+                            st.success("워크시트 'users' 로드 성공")
+                        except Exception as ue:
+                            st.error(f"유저 시트 로드 실패: {ue}")
+                            users_df = pd.DataFrame()
+                
+                if not users_df.empty:
+                    st.write(f"유저 시트 컬럼: {users_df.columns.tolist()}")
+                    st.dataframe(users_df.head())
+                    
                 st.write("----------------------------")
             except Exception as e:
                 st.error(f"진단 중 오류 발생: {e}")
@@ -574,6 +594,13 @@ else:
             cookie_manager.delete("last_activity")
             st.session_state.clear()
             st.rerun()
+            
+        # Session Debug Info
+        with st.expander("세션 디버그 정보 (Session Debug)", expanded=False):
+            st.write(f"Session Username: {st.session_state.get('username')}")
+            st.write(f"Session Authenticated: {st.session_state.get('authenticated')}")
+            st.write(f"Cookie Auth User: {cookie_manager.get('auth_user')}")
+            st.write(f"Cookie Last Activity: {cookie_manager.get('last_activity')}")
             
         st.divider()
 
