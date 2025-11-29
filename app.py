@@ -381,11 +381,13 @@ def login_page():
         submit = st.form_submit_button("로그인")
         
         if submit:
+            st.write(f"Debug: Login attempt with username='{username}'")
             is_valid, is_admin = check_password(username, password)
             if is_valid:
                 st.session_state["authenticated"] = True
                 st.session_state["username"] = username # Store username
                 st.session_state["is_admin"] = is_admin # Store admin status
+                st.write(f"Debug: Login successful. User={username}, Admin={is_admin}")
                 
                 # Set cookies for persistence (expire in 1 day)
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
@@ -425,6 +427,7 @@ if not st.session_state["authenticated"]:
                 st.warning("30분 동안 활동이 없어 로그아웃 되었습니다.")
             else:
                 # Restore Session
+                st.write(f"Debug: Restoring session from cookie for user: {auth_user}")
                 st.session_state["authenticated"] = True
                 st.session_state["username"] = auth_user # Restore username
                 # Update last activity
