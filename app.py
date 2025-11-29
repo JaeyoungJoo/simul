@@ -430,10 +430,20 @@ def logout():
     # Clear all session state
     st.session_state.clear()
     st.session_state["authenticated"] = False
+    st.session_state["logged_out"] = True # Flag to prevent immediate restore
         
-    # Delete cookies
-    cookie_manager.delete("auth_user", key="logout_auth_user")
-    cookie_manager.delete("last_activity", key="logout_last_activity")
+    # Delete cookies (Overwrite with empty and expire)
+    # cookie_manager.delete often fails to sync immediately. Setting to empty is safer.
+    cookie_manager.set("auth_user", "", key="logout_auth_user_overwrite")
+    cookie_manager.set("last_activity", "", key="logout_last_activity_overwrite")
+    
+    # Also try delete for good measure
+    try:
+        cookie_manager.delete("auth_user")
+        cookie_manager.delete("last_activity")
+    except:
+        pass
+        
     st.rerun()
 
 # --- Main Execution Flow ---
@@ -441,11 +451,14 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 # Check Cookies for Persistence
-if not st.session_state["authenticated"]:
+# Only check if not authenticated AND not just logged out
+if not st.session_state["authenticated"] and not st.session_state.get("logged_out"):
     auth_user = cookie_manager.get("auth_user")
     last_activity = cookie_manager.get("last_activity")
     
-    if auth_user and last_activity:
+    st.write(f"Debug: Cookie Check - User={auth_user}, LastAct={last_activity}")
+    
+    if auth_user and last_activity and auth_user != "":
         try:
             last_activity_time = float(last_activity)
             current_time = time.time()
@@ -466,10 +479,20 @@ if not st.session_state["authenticated"]:
                 st.rerun()
         except ValueError:
             pass
+    else:
+        st.write("Debug: No valid auth cookie found.")
 
 if not st.session_state["authenticated"]:
+    # Reset logged_out flag if we are showing login page (so next refresh can check cookies if needed? No, keep it until login)
+    # Actually, if we are here, we are showing login page.
     login_page()
 else:
+    # We are authenticated.
+    # Reset logged_out flag
+    if st.session_state.get("logged_out"):
+        st.session_state["logged_out"] = False
+        
+    st.write(f"Debug: Main Logic - Current User: {st.session_state.get('username')}")
     # Update last activity timestamp on every interaction
     current_time = time.time()
     expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
