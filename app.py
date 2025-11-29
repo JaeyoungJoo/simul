@@ -153,9 +153,9 @@ def load_config(current_username=None):
 
         # Debug Output
         if target_config_json:
-            st.toast(f"설정 로드 성공: {current_username if current_username else 'Admin/Default'}")
+            st.success(f"설정 로드 성공: {current_username if current_username else 'Admin/Default'}")
         else:
-            st.toast(f"설정 로드 실패: {current_username} (기본값 사용)")
+            st.error(f"설정 로드 실패: {current_username} (기본값 사용)")
             # st.write(f"Debug Info: User={current_username}, Columns={df.columns.tolist()}")
         
         # 3. Legacy Fallback: If no username column, or just one row exists (old format)
@@ -470,6 +470,7 @@ else:
     
     # Load Config at Startup
     if 'config_loaded' not in st.session_state:
+        st.write("Debug: Calling load_config...")
         with st.spinner("데이터베이스에서 설정을 불러오는 중..."):
             loaded_config = load_config(st.session_state.get("username"))
             
