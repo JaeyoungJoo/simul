@@ -414,14 +414,33 @@ else:
 
     # Initialize Session State (Defaults)
     if 'segments' not in st.session_state:
-        st.session_state.segments = [
-            SegmentConfig("Super Champions", 0.0003, 0.95, 10.0, 30.0, 4.0, 5.0, 18, 2),
-            SegmentConfig("Champions", 0.0027, 0.85, 5.0, 15.0, 3.0, 4.0, 18, 2),
-            SegmentConfig("World Class", 0.15, 0.60, 3.0, 10.0, 1.0, 3.0, 19, 1),
-            SegmentConfig("Professional", 0.30, 0.40, 2.0, 5.0, -1.0, 1.0, 19, 1),
-            SegmentConfig("Semi-Pro", 0.35, 0.20, 1.0, 3.0, -3.0, -1.0, 20, 0),
-            SegmentConfig("Amateur", 0.197, 0.10, 0.0, 2.0, -5.0, -3.0, 20, 0)
-        ]
+        # Try loading from CSV first
+        loaded_segments = []
+        if os.path.exists("segment_balance.csv"):
+            try:
+                df_seg = pd.read_csv("segment_balance.csv")
+                for _, row in df_seg.iterrows():
+                    loaded_segments.append(SegmentConfig(
+                        row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
+                        float(row["matches_per_day_min"]), float(row["matches_per_day_max"]),
+                        float(row["true_skill_min"]), float(row["true_skill_max"]),
+                        int(row["active_hour_start"]), int(row["active_hour_end"])
+                    ))
+            except Exception as e:
+                st.warning(f"세그먼트 CSV 로드 실패: {e}")
+        
+        if loaded_segments:
+            st.session_state.segments = loaded_segments
+        else:
+            # Fallback to Defaults
+            st.session_state.segments = [
+                SegmentConfig("Super Champions", 0.0003, 0.95, 10.0, 30.0, 4.0, 5.0, 18, 2),
+                SegmentConfig("Champions", 0.0027, 0.85, 5.0, 15.0, 3.0, 4.0, 18, 2),
+                SegmentConfig("World Class", 0.15, 0.60, 3.0, 10.0, 1.0, 3.0, 19, 1),
+                SegmentConfig("Professional", 0.30, 0.40, 2.0, 5.0, -1.0, 1.0, 19, 1),
+                SegmentConfig("Semi-Pro", 0.35, 0.20, 1.0, 3.0, -3.0, -1.0, 20, 0),
+                SegmentConfig("Amateur", 0.197, 0.10, 0.0, 2.0, -5.0, -3.0, 20, 0)
+            ]
 
     if 'simulation' not in st.session_state:
         st.session_state.simulation = None
@@ -524,14 +543,52 @@ else:
 
         # --- Tier Configuration ---
     if 'tier_config' not in st.session_state or not st.session_state.tier_config:
-        # Default Tiers
-        st.session_state.tier_config = [
-            TierConfig("Bronze", TierType.MMR, 0, 1200, placement_min_mmr=0, placement_max_mmr=1200),
-            TierConfig("Silver", TierType.MMR, 1200, 1400, placement_min_mmr=1200, placement_max_mmr=1400),
-            TierConfig("Gold", TierType.MMR, 1400, 1600, placement_min_mmr=1400, placement_max_mmr=1600),
-            TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100, placement_min_mmr=1600, placement_max_mmr=1800), # Example Ladder
-            TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
-        ]
+        # Try loading from CSV first
+        loaded_tiers = []
+        if os.path.exists("tier_balance.csv"):
+            try:
+                df_tier = pd.read_csv("tier_balance.csv")
+                for _, row in df_tier.iterrows():
+                    # Handle TierType enum conversion
+                    t_type_str = row["type"]
+                    t_type = TierType.MMR # Default
+                    if t_type_str == "Ladder": t_type = TierType.LADDER
+                    elif t_type_str == "Ratio": t_type = TierType.RATIO
+                    elif t_type_str == "MMR": t_type = TierType.MMR
+                    
+                    loaded_tiers.append(TierConfig(
+                        name=str(row["name"]),
+                        type=t_type,
+                        min_mmr=float(row["min_mmr"]),
+                        max_mmr=float(row["max_mmr"]),
+                        demotion_lives=int(row.get("demotion_lives", 0)),
+                        points_win=int(row.get("points_win", 0)),
+                        points_draw=int(row.get("points_draw", 0)),
+                        promotion_points=int(row.get("promotion_points", 100)),
+                        capacity=int(row.get("capacity", 0)),
+                        placement_min_mmr=float(row.get("placement_min_mmr", 0)),
+                        placement_max_mmr=float(row.get("placement_max_mmr", 0)),
+                        promotion_points_low=int(row.get("promotion_points_low", row.get("promotion_points", 100))),
+                        promotion_points_high=int(row.get("promotion_points_high", row.get("promotion_points", 100))),
+                        loss_point_correction=float(row.get("loss_point_correction", 1.0)),
+                        bot_match_enabled=bool(row.get("bot_match_enabled", False)),
+                        bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
+                        bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
+                    ))
+            except Exception as e:
+                st.warning(f"티어 CSV 로드 실패: {e}")
+        
+        if loaded_tiers:
+            st.session_state.tier_config = loaded_tiers
+        else:
+            # Default Tiers
+            st.session_state.tier_config = [
+                TierConfig("Bronze", TierType.MMR, 0, 1200, placement_min_mmr=0, placement_max_mmr=1200),
+                TierConfig("Silver", TierType.MMR, 1200, 1400, placement_min_mmr=1200, placement_max_mmr=1400),
+                TierConfig("Gold", TierType.MMR, 1400, 1600, placement_min_mmr=1400, placement_max_mmr=1600),
+                TierConfig("Platinum", TierType.LADDER, 1600, 1800, 0, 3, 10, 5, 100, placement_min_mmr=1600, placement_max_mmr=1800), # Example Ladder
+                TierConfig("Diamond", TierType.RATIO, 1800, 9999, 0, 0, 0, 0, 0, 100, placement_min_mmr=1800, placement_max_mmr=9999) # Example Ratio
+            ]
 
     with st.expander("티어 기준 설정 (Tier Config)"):
             st.caption("티어별 승강등 규칙을 설정하세요. 순서는 낮은 티어부터 높은 티어 순입니다.")
