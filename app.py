@@ -339,8 +339,14 @@ def save_config(current_username=None):
                 if target_user_norm in df["username_norm"].values:
                     # Find index
                     idx = df.index[df["username_norm"] == target_user_norm].tolist()[0]
-                    df.at[idx, "ConfigJSON"] = json_str
-                    df.at[idx, "Comment"] = user_comment_text
+                    
+                    # Ensure columns exist before assigning
+                    if "ConfigJSON" not in df.columns: df["ConfigJSON"] = ""
+                    if "Comment" not in df.columns: df["Comment"] = ""
+                    
+                    # Use .loc for safety
+                    df.loc[idx, "ConfigJSON"] = json_str
+                    df.loc[idx, "Comment"] = user_comment_text
                     # Drop temp column
                     df = df.drop(columns=["username_norm"])
                     df_to_save = df
@@ -1774,5 +1780,5 @@ else:
     comments = st.text_area("메모용:", value=st.session_state.get("user_comments", ""), height=500)
     if st.button("Save"):
         st.session_state.user_comments = comments
-        save_config()
+        save_config(st.session_state.get("username"))
         st.success("코멘트가 저장되었습니다!")
