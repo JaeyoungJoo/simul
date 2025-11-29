@@ -363,6 +363,29 @@ def check_password(username, password):
         st.error(f"로그인 오류: {e}")
         return False, False
 
+def login_page():
+    st.title("로그인")
+    st.info("시뮬레이션을 이용하려면 로그인하세요.")
+    
+    with st.form("login_form"):
+        username = st.text_input("아이디")
+        password = st.text_input("비밀번호", type="password")
+        submit = st.form_submit_button("로그인")
+        
+        if submit:
+            is_valid, is_admin = check_password(username, password)
+            if is_valid:
+                st.session_state["authenticated"] = True
+                st.session_state["username"] = username # Store username
+                st.session_state["is_admin"] = is_admin # Store admin status
+                
+                # Set cookies for persistence (expire in 1 day)
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
+                cookie_manager.set("auth_user", username, expires_at=expires_at, key="set_auth_user")
+                st.rerun()
+            else:
+                st.error("아이디 또는 비밀번호가 잘못되었습니다.")
+
 def logout():
     st.session_state["authenticated"] = False
     # Only delete auth_user. last_activity becomes irrelevant without auth_user.
