@@ -387,11 +387,9 @@ def login_page():
                 st.error("아이디 또는 비밀번호가 잘못되었습니다.")
 
 def logout():
+    # Clear all session state
+    st.session_state.clear()
     st.session_state["authenticated"] = False
-    if "username" in st.session_state:
-        del st.session_state["username"]
-    if "is_admin" in st.session_state:
-        del st.session_state["is_admin"]
         
     # Delete cookies
     cookie_manager.delete("auth_user", key="logout_auth_user")
