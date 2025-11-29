@@ -944,10 +944,10 @@ class FastSimulation:
             streak_abs = np.abs(streak)
             streak_bonus = np.zeros(len(matches))
             
-            sorted_rules = sorted(self.elo_config.streak_rules, key=lambda x: x['min_streak'])
+            sorted_rules = sorted(self.elo_config.streak_rules, key=lambda x: float(x['min_streak']))
             for rule in sorted_rules:
-                mask = streak_abs >= rule['min_streak']
-                streak_bonus[mask] = rule['bonus']
+                mask = streak_abs >= float(rule['min_streak'])
+                streak_bonus[mask] = float(rule['bonus'])
                 
             k += streak_bonus
             return k
@@ -956,11 +956,12 @@ class FastSimulation:
         k_b = get_k(self.matches_played[idx_b], self.streak[idx_b])
         
         goal_diff_bonus = np.zeros(len(idx_a))
-        sorted_gd_rules = sorted(self.elo_config.goal_diff_rules, key=lambda x: x['min_diff'])
-        
+        sorted_gd_rules = sorted(self.elo_config.goal_diff_rules, key=lambda x: float(x['min_diff']))
         for rule in sorted_gd_rules:
-            mask = goal_diff >= rule['min_diff']
-            goal_diff_bonus[mask] = rule['bonus']
+            mask = goal_diff_abs >= float(rule['min_diff'])
+            goal_diff_bonus[mask] = float(rule['bonus'])
+        
+
             
         k_a += goal_diff_bonus
         k_b += goal_diff_bonus
