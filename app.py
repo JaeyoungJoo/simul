@@ -1504,6 +1504,11 @@ else:
                     st.divider()
                     st.markdown(f"#### '{selected_segment}' 세그먼트 초반 3경기 분석 (First 3 Matches Analysis)")
                     
+                    # Migration: Initialize if missing (for hot-reloading)
+                    if not hasattr(sim, 'first_3_outcomes'):
+                        sim.first_3_outcomes = np.full((sim.num_users, 3), -9, dtype=int)
+                        st.warning("⚠️ 새로운 분석 기능이 추가되었습니다. 데이터 수집을 위해 시뮬레이션을 계속 진행해주세요.")
+                    
                     if hasattr(sim, 'first_3_outcomes') and seg_idx != -1:
                         # Filter users in this segment
                         seg_mask = (sim.segment_indices == seg_idx)
