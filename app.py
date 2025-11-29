@@ -96,7 +96,7 @@ st.set_page_config(page_title="Rank Simulation", layout="wide")
 # --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
 
-def load_config():
+def load_config(current_username=None):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Config", ttl=0) # Explicitly read 'Config' worksheet with no cache
@@ -104,15 +104,55 @@ def load_config():
         if df.empty:
             return {}
             
-        # Expecting ConfigJSON in the first cell/column
-        if "ConfigJSON" in df.columns and len(df) > 0:
-            json_str = df.iloc[0]["ConfigJSON"]
-            return json.loads(json_str)
-        # Fallback: try reading first cell if column name doesn't match
-        if len(df) > 0 and len(df.columns) > 0:
-             # This is a bit risky without strict schema, but let's try
-             pass
-             
+        # Normalize columns
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        target_config_json = None
+        
+        # 1. Try to find config for current user
+        if current_username and "username" in df.columns and "ConfigJSON" in df.columns:
+            user_config = df[df["username"] == current_username]
+            if not user_config.empty:
+                target_config_json = user_config.iloc[0]["ConfigJSON"]
+        
+        # 2. If no user config (or not logged in), try to find Default (Admin) config
+        if not target_config_json:
+            # We need to find who is admin. This requires reading Users sheet again.
+            # Optimization: If we stored admin list in session state? No, let's read it to be safe/fresh.
+            try:
+                users_df = conn.read(worksheet="Users", ttl=0)
+                users_df.columns = [str(c).strip().lower() for c in users_df.columns]
+                
+                if 'admin' in users_df.columns and 'username' in users_df.columns:
+                    # Filter for admins
+                    # Handle various truthy values
+                    is_admin_mask = users_df['admin'].astype(str).str.strip().str.lower().isin(['true', '1', 'yes'])
+                    admin_users = users_df[is_admin_mask]['username'].tolist()
+                    
+                    if admin_users:
+                        # Find config for the first admin
+                        # We need to match username in Config sheet
+                        if "username" in df.columns and "ConfigJSON" in df.columns:
+                            # Filter Config df for rows where username is in admin_users
+                            admin_configs = df[df["username"].isin(admin_users)]
+                            
+                            if not admin_configs.empty:
+                                # Pick the first one found (as per requirement)
+                                target_config_json = admin_configs.iloc[0]["ConfigJSON"]
+            except Exception as e:
+                # st.warning(f"관리자 설정 로드 실패: {e}")
+                pass
+
+        # 3. Legacy Fallback: If no username column, or just one row exists (old format)
+        if not target_config_json:
+             if "ConfigJSON" in df.columns and len(df) > 0:
+                 # If there is no username column, assume single config mode
+                 if "username" not in df.columns:
+                     target_config_json = df.iloc[0]["ConfigJSON"]
+        
+        if target_config_json:
+            return json.loads(target_config_json)
+            
         return {}
     except Exception as e:
         # Fallback to local
@@ -124,7 +164,12 @@ def load_config():
                  pass
         return {}
 
-def save_config():
+def save_config(current_username=None):
+    if not current_username:
+        # If no username provided (e.g. not logged in), maybe don't save or save to local?
+        # For now, let's require username for cloud save.
+        return
+
     config = {
         # Global
         "num_users": st.session_state.get("num_users", 1000),
@@ -136,6 +181,7 @@ def save_config():
         "prob_pk": st.session_state.get("prob_pk", 0.5),
         "max_goal_diff": st.session_state.get("max_goal_diff", 5),
         "matchmaking_jitter": st.session_state.get("matchmaking_jitter", 50.0),
+        "bot_win_rate": st.session_state.get("bot_win_rate", 0.8),
         # ELO Config
         "base_k": st.session_state.get("base_k", 32),
         "placement_matches": st.session_state.get("placement_matches", 10),
@@ -153,6 +199,10 @@ def save_config():
         "calibration_k_bonus": st.session_state.get("calibration_k_bonus", 2.0),
         "calibration_enabled": st.session_state.get("calibration_enabled", False),
         "calibration_match_count": st.session_state.get("calibration_match_count", 10),
+        "mmr_compression_correction": st.session_state.get("mmr_compression_correction", 0.0),
+        "gd_bonus_weight": st.session_state.get("gd_bonus_weight", 1.0),
+        "streak_bonus": st.session_state.get("streak_bonus", 1.0),
+        "streak_threshold": st.session_state.get("streak_threshold", 3),
         # Tier Config (Serialize)
         "tier_config": [
             {
@@ -193,10 +243,39 @@ def save_config():
     # Save to Google Sheets
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # Read existing to preserve other users
+        try:
+            df = conn.read(worksheet="Config", ttl=0)
+        except:
+            df = pd.DataFrame()
+            
         json_str = json.dumps(config)
-        df_to_save = pd.DataFrame([{"ConfigJSON": json_str}])
-        conn.update(worksheet="Config", data=df_to_save) # Explicitly update 'Config' worksheet
+        new_row = {"username": current_username, "ConfigJSON": json_str}
+        
+        if df.empty:
+            df_to_save = pd.DataFrame([new_row])
+        else:
+            # Check if username column exists
+            if "username" in df.columns:
+                # Update existing user
+                if current_username in df["username"].values:
+                    df.loc[df["username"] == current_username, "ConfigJSON"] = json_str
+                    df_to_save = df
+                else:
+                    # Append new user
+                    df_to_save = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            else:
+                # Migration: Add username column to existing (assume they are legacy/orphaned or assign to 'admin'?)
+                # Safest: Just append new structure. 
+                # But we want to keep clean.
+                # Let's just append.
+                df_to_save = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                
+        conn.update(worksheet="Config", data=df_to_save)
+        st.toast("설정이 저장되었습니다!")
     except Exception as e:
+        st.error(f"설정 저장 실패: {e}")
         # Fallback to local
         try:
             with open(CONFIG_FILE, "w") as f:
@@ -222,18 +301,18 @@ def check_password(username, password):
                 df = conn.read(worksheet="users", ttl=0)
             except Exception as e:
                 st.error(f"오류: 'Users' 또는 'users' 시트를 찾을 수 없습니다. 구글 시트의 탭 이름을 확인해주세요. (상세: {e})")
-                return False
+                return False, False
         
         if df.empty:
             st.error("디버그: Users 시트가 비어있습니다.")
-            return False
+            return False, False
             
         # Normalize columns: strip whitespace and lowercase
         df.columns = [str(c).strip().lower() for c in df.columns]
         
         if 'username' not in df.columns or 'password' not in df.columns:
             st.error(f"디버그: 'username' 또는 'password' 컬럼이 없습니다. 발견된 컬럼: {df.columns.tolist()}")
-            return False
+            return False, False
 
         # Normalize data for comparison
         # Convert username column to string, strip whitespace
@@ -249,35 +328,23 @@ def check_password(username, password):
                 stored_password = stored_password[:-2]
                 
             if stored_password == password.strip():
-                return True
+                # Check Admin Status
+                is_admin = False
+                if 'admin' in df.columns:
+                    admin_val = user_row.iloc[0]['admin']
+                    # Handle various truthy values (True, 'TRUE', 'true', 1, '1')
+                    if str(admin_val).strip().lower() in ['true', '1', 'yes']:
+                        is_admin = True
+                return True, is_admin
             else:
                 pass
         else:
              pass
              
-        return False
+        return False, False
     except Exception as e:
         st.error(f"로그인 오류: {e}")
-        return False
-
-def login_page():
-    st.title("로그인")
-    st.info("시뮬레이션을 이용하려면 로그인하세요.")
-    
-    with st.form("login_form"):
-        username = st.text_input("아이디")
-        password = st.text_input("비밀번호", type="password")
-        submit = st.form_submit_button("로그인")
-        
-        if submit:
-            if check_password(username, password):
-                st.session_state["authenticated"] = True
-                # Set cookies for persistence (expire in 1 day)
-                expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
-                cookie_manager.set("auth_user", username, expires_at=expires_at, key="set_auth_user")
-                st.rerun()
-            else:
-                st.error("아이디 또는 비밀번호가 잘못되었습니다.")
+        return False, False
 
 def logout():
     st.session_state["authenticated"] = False
@@ -351,7 +418,7 @@ else:
     # Load Config at Startup
     if 'config_loaded' not in st.session_state:
         with st.spinner("데이터베이스에서 설정을 불러오는 중..."):
-            loaded_config = load_config()
+            loaded_config = load_config(st.session_state.get("username"))
             
         if loaded_config:
             # Apply to session state for widgets
@@ -814,7 +881,7 @@ else:
                 st.session_state.reset_rules = pd.DataFrame(columns=["min_mmr", "max_mmr", "reset_mmr", "soft_reset_ratio"])
 
     if st.button("설정 저장"):
-            save_config()
+            save_config(st.session_state.get("username"))
             st.success("설정이 저장되었습니다!")
 
     # --- Main Content ---
