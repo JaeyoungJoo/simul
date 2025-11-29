@@ -388,8 +388,14 @@ def login_page():
 
 def logout():
     st.session_state["authenticated"] = False
-    # Only delete auth_user. last_activity becomes irrelevant without auth_user.
-    cookie_manager.delete("auth_user", key="delete_auth_user")
+    if "username" in st.session_state:
+        del st.session_state["username"]
+    if "is_admin" in st.session_state:
+        del st.session_state["is_admin"]
+        
+    # Delete cookies
+    cookie_manager.delete("auth_user", key="logout_auth_user")
+    cookie_manager.delete("last_activity", key="logout_last_activity")
     st.rerun()
 
 # --- Main Execution Flow ---
@@ -414,6 +420,7 @@ if not st.session_state["authenticated"]:
             else:
                 # Restore Session
                 st.session_state["authenticated"] = True
+                st.session_state["username"] = auth_user # Restore username
                 # Update last activity
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
                 cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
