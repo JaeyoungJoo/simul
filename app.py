@@ -566,6 +566,8 @@ else:
     if 'simulation' not in st.session_state:
         st.session_state.simulation = None
 
+    # --- Sidebar Configuration ---
+    with st.sidebar:
         with st.expander("기본 설정 (Global Settings)", expanded=True):
             if st.button("설정 다시 불러오기 (Reload Config)"):
                 if 'config_loaded' in st.session_state:
