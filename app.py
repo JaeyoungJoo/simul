@@ -566,9 +566,12 @@ else:
     if 'simulation' not in st.session_state:
         st.session_state.simulation = None
 
-    # --- Sidebar Configuration ---
-    with st.sidebar:
         with st.expander("기본 설정 (Global Settings)", expanded=True):
+            if st.button("설정 다시 불러오기 (Reload Config)"):
+                if 'config_loaded' in st.session_state:
+                    del st.session_state['config_loaded']
+                st.rerun()
+            
             st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="시뮬레이션에 참여할 총 유저 수입니다.")
             st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
             st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
