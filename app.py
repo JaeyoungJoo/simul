@@ -95,20 +95,22 @@ st.set_page_config(page_title="Rank Simulation", layout="wide")
 
 # --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
-
 def load_config(current_username=None):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         # Read Config with fallback
         df = pd.DataFrame()
         try:
-            df = conn.read(worksheet="Config", ttl=0)
+            df = conn.read(worksheet="simul_config", ttl=0)
         except:
             try:
-                df = conn.read(worksheet="config", ttl=0)
-            except Exception as e:
-                st.error(f"설정 시트 로드 실패: {e}")
-                return {}
+                df = conn.read(worksheet="Config", ttl=0)
+            except:
+                try:
+                    df = conn.read(worksheet="config", ttl=0)
+                except Exception as e:
+                    st.error(f"설정 시트 로드 실패 (simul_config, Config, config 모두 실패): {e}")
+                    return {}
         
         if df.empty:
             return {}
@@ -270,15 +272,21 @@ def save_config(current_username=None):
         
         # Read existing to preserve other users
         df = pd.DataFrame()
-        target_worksheet = "Config"
+        target_worksheet = "simul_config"
         try:
-            df = conn.read(worksheet="Config", ttl=0)
+            df = conn.read(worksheet="simul_config", ttl=0)
         except:
             try:
-                df = conn.read(worksheet="config", ttl=0)
-                target_worksheet = "config"
+                df = conn.read(worksheet="Config", ttl=0)
+                target_worksheet = "Config"
             except:
-                df = pd.DataFrame()
+                try:
+                    df = conn.read(worksheet="config", ttl=0)
+                    target_worksheet = "config"
+                except:
+                    df = pd.DataFrame()
+                    # If all fail, default to simul_config for creation
+                    target_worksheet = "simul_config"
             
         json_str = json.dumps(config)
         new_row = {"username": current_username, "ConfigJSON": json_str}
@@ -499,6 +507,15 @@ else:
                         st.success("워크시트 'config' (소문자) 로드 성공")
                     except Exception as e2:
                         st.error(f"모든 시트 로드 실패. 오류: {e2}")
+                        # Try reading default sheet
+                        try:
+                            st.info("기본(첫 번째) 시트를 읽어봅니다...")
+                            df = conn.read(ttl=0)
+                            st.success("기본 시트 로드 성공!")
+                            st.write(f"기본 시트 컬럼: {df.columns.tolist()}")
+                            st.warning("이 시트가 설정 시트라면, 탭 이름을 'Config'로 변경해 주세요.")
+                        except Exception as e3:
+                            st.error(f"기본 시트 로드도 실패: {e3}")
                         st.exception(e2)
                         
                 if not df.empty:
