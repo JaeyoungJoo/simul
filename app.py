@@ -107,6 +107,10 @@ def load_config(current_username=None):
         # Normalize columns
         df.columns = [str(c).strip() for c in df.columns]
         
+        # Debug: Show loaded dataframe info
+        # st.write("Debug: Config Sheet Columns:", df.columns.tolist())
+        # st.write("Debug: Config Sheet Data (Head):", df.head())
+        
         target_config_json = None
         
         # 1. Try to find config for current user
@@ -147,8 +151,12 @@ def load_config(current_username=None):
                 st.error(f"관리자 설정 로드 실패: {e}")
                 pass
 
-        # Debug
-        # st.write(f"Debug: Loaded Config for {current_username}: {target_config_json is not None}")
+        # Debug Output
+        if target_config_json:
+            st.toast(f"설정 로드 성공: {current_username if current_username else 'Admin/Default'}")
+        else:
+            st.toast(f"설정 로드 실패: {current_username} (기본값 사용)")
+            # st.write(f"Debug Info: User={current_username}, Columns={df.columns.tolist()}")
         
         # 3. Legacy Fallback: If no username column, or just one row exists (old format)
         if not target_config_json:
