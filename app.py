@@ -696,14 +696,7 @@ else:
                 st.session_state.user_comments = loaded_config["user_comments"]
                 
         st.session_state.config_loaded = True
-                        st.warning(f"티어 설정 로드 중 오류: {e}")
-                        st.session_state.tier_config = []
-                else:
-                    st.session_state[k] = v
-            if "user_comments" in loaded_config:
-                st.session_state.user_comments = loaded_config["user_comments"]
-                
-        st.session_state.config_loaded = True
+
 
     # Initialize Session State (Defaults)
     if 'segments' not in st.session_state:
