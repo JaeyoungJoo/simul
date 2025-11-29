@@ -472,6 +472,13 @@ else:
             
         if st.button("로그아웃"):
             logout()
+            
+        if st.button("쿠키 강제 삭제 (Force Clear Cookies)", type="secondary"):
+            cookie_manager.delete("auth_user")
+            cookie_manager.delete("last_activity")
+            st.session_state.clear()
+            st.rerun()
+            
         st.divider()
 
     # Debug: Current User
