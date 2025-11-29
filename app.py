@@ -470,6 +470,40 @@ else:
                 del st.session_state['config_loaded']
             st.rerun()
             
+        if st.button("데이터베이스 진단 (Debug DB)", key="debug_db_btn"):
+            try:
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                df = conn.read(worksheet="Config", ttl=0)
+                st.write("--- 데이터베이스 진단 결과 ---")
+                st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
+                
+                # Normalize
+                df.columns = [str(c).strip() for c in df.columns]
+                if "username" in df.columns:
+                    df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+                    current_user = st.session_state.get("username", "").strip().lower()
+                    st.write(f"2. 현재 접속 계정: '{current_user}'")
+                    
+                    user_row = df[df["username_norm"] == current_user]
+                    if not user_row.empty:
+                        st.success(f"3. 계정 데이터 발견됨! (행 번호: {user_row.index[0]})")
+                        json_data = user_row.iloc[0].get("ConfigJSON")
+                        st.text(f"4. JSON 데이터 미리보기:\n{str(json_data)[:200]}...")
+                        try:
+                            json.loads(json_data)
+                            st.success("5. JSON 파싱 성공: 데이터 형식이 올바릅니다.")
+                        except Exception as e:
+                            st.error(f"5. JSON 파싱 실패: {e}")
+                    else:
+                        st.error(f"3. 계정 데이터 없음: '{current_user}'와 일치하는 행을 찾지 못했습니다.")
+                        st.write(f"   (DB에 존재하는 유저 목록: {df['username_norm'].unique().tolist()})")
+                else:
+                    st.error("오류: 'username' 컬럼이 시트에 없습니다.")
+                st.dataframe(df.head())
+                st.write("----------------------------")
+            except Exception as e:
+                st.error(f"진단 중 오류 발생: {e}")
+            
         if st.button("로그아웃"):
             logout()
             
