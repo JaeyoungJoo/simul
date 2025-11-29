@@ -518,116 +518,122 @@ else:
     # Sidebar Logout
     with st.sidebar:
         st.write(f"로그인됨: {st.session_state.get('username', 'Unknown')}")
-        if st.button("설정 다시 불러오기 (Reload Config)", key="reload_btn_top"):
-            if 'config_loaded' in st.session_state:
-                del st.session_state['config_loaded']
-            st.rerun()
+        
+        # Admin-only Debug Tools
+        if st.session_state.get("is_admin", False):
+            st.divider()
+            st.caption("관리자 도구 (Admin Tools)")
             
-        if st.button("데이터베이스 진단 (Debug DB)", key="debug_db_btn"):
-            try:
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                df = pd.DataFrame()
+            if st.button("설정 다시 불러오기 (Reload Config)", key="reload_btn_top"):
+                if 'config_loaded' in st.session_state:
+                    del st.session_state['config_loaded']
+                st.rerun()
+                
+            if st.button("데이터베이스 진단 (Debug DB)", key="debug_db_btn"):
                 try:
-                    df = conn.read(worksheet="Simul_Config", ttl=0)
-                    st.success("워크시트 'Simul_Config' 로드 성공")
-                except Exception as e1:
-                    st.warning(f"'Simul_Config' 시트 로드 실패: {e1}")
+                    conn = st.connection("gsheets", type=GSheetsConnection)
+                    df = pd.DataFrame()
                     try:
-                        df = conn.read(worksheet="simul_config", ttl=0)
-                        st.success("워크시트 'simul_config' (소문자) 로드 성공")
-                    except Exception as e2:
-                        st.warning(f"'simul_config' 시트 로드 실패: {e2}")
+                        df = conn.read(worksheet="Simul_Config", ttl=0)
+                        st.success("워크시트 'Simul_Config' 로드 성공")
+                    except Exception as e1:
+                        st.warning(f"'Simul_Config' 시트 로드 실패: {e1}")
                         try:
-                            df = conn.read(worksheet="Config", ttl=0)
-                            st.success("워크시트 'Config' 로드 성공")
-                        except Exception as e3:
-                            st.warning(f"'Config' 시트 로드 실패: {e3}")
+                            df = conn.read(worksheet="simul_config", ttl=0)
+                            st.success("워크시트 'simul_config' (소문자) 로드 성공")
+                        except Exception as e2:
+                            st.warning(f"'simul_config' 시트 로드 실패: {e2}")
                             try:
-                                df = conn.read(worksheet="config", ttl=0)
-                                st.success("워크시트 'config' (소문자) 로드 성공")
-                            except Exception as e4:
-                                st.error(f"모든 시트 로드 실패. 오류: {e4}")
-                                # Try reading default sheet
+                                df = conn.read(worksheet="Config", ttl=0)
+                                st.success("워크시트 'Config' 로드 성공")
+                            except Exception as e3:
+                                st.warning(f"'Config' 시트 로드 실패: {e3}")
                                 try:
-                                    st.info("기본(첫 번째) 시트를 읽어봅니다...")
-                                    df = conn.read(ttl=0)
-                                    st.success("기본 시트 로드 성공!")
-                                    st.write(f"기본 시트 컬럼: {df.columns.tolist()}")
-                                    st.warning("이 시트가 설정 시트라면, 탭 이름을 'Simul_Config'로 변경해 주세요.")
-                                except Exception as e5:
-                                    st.error(f"기본 시트 로드도 실패: {e5}")
-                                st.exception(e4)
+                                    df = conn.read(worksheet="config", ttl=0)
+                                    st.success("워크시트 'config' (소문자) 로드 성공")
+                                except Exception as e4:
+                                    st.error(f"모든 시트 로드 실패. 오류: {e4}")
+                                    # Try reading default sheet
+                                    try:
+                                        st.info("기본(첫 번째) 시트를 읽어봅니다...")
+                                        df = conn.read(ttl=0)
+                                        st.success("기본 시트 로드 성공!")
+                                        st.write(f"기본 시트 컬럼: {df.columns.tolist()}")
+                                        st.warning("이 시트가 설정 시트라면, 탭 이름을 'Simul_Config'로 변경해 주세요.")
+                                    except Exception as e5:
+                                        st.error(f"기본 시트 로드도 실패: {e5}")
+                                    st.exception(e4)
+                            
+                    if not df.empty:
+                        st.write("--- 데이터베이스 진단 결과 (설정) ---")
+                        st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
                         
-                if not df.empty:
-                    st.write("--- 데이터베이스 진단 결과 (설정) ---")
-                    st.write(f"1. 컬럼 목록: {df.columns.tolist()}")
-                    
-                    # Normalize
-                    df.columns = [str(c).strip() for c in df.columns]
-                    if "username" in df.columns:
-                        df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
-                        current_user = st.session_state.get("username", "").strip().lower()
-                        st.write(f"2. 현재 접속 계정: '{current_user}'")
-                        
-                        user_row = df[df["username_norm"] == current_user]
-                        if not user_row.empty:
-                            st.success(f"3. 계정 데이터 발견됨! (행 번호: {user_row.index[0]})")
-                            json_data = user_row.iloc[0].get("ConfigJSON")
-                            st.text(f"4. JSON 데이터 미리보기:\n{str(json_data)[:200]}...")
-                            try:
-                                json.loads(json_data)
-                                st.success("5. JSON 파싱 성공: 데이터 형식이 올바릅니다.")
-                            except Exception as e:
-                                st.error(f"5. JSON 파싱 실패: {e}")
+                        # Normalize
+                        df.columns = [str(c).strip() for c in df.columns]
+                        if "username" in df.columns:
+                            df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+                            current_user = st.session_state.get("username", "").strip().lower()
+                            st.write(f"2. 현재 접속 계정: '{current_user}'")
+                            
+                            user_row = df[df["username_norm"] == current_user]
+                            if not user_row.empty:
+                                st.success(f"3. 계정 데이터 발견됨! (행 번호: {user_row.index[0]})")
+                                json_data = user_row.iloc[0].get("ConfigJSON")
+                                st.text(f"4. JSON 데이터 미리보기:\n{str(json_data)[:200]}...")
+                                try:
+                                    json.loads(json_data)
+                                    st.success("5. JSON 파싱 성공: 데이터 형식이 올바릅니다.")
+                                except Exception as e:
+                                    st.error(f"5. JSON 파싱 실패: {e}")
+                            else:
+                                st.error(f"3. 계정 데이터 없음: '{current_user}'와 일치하는 행을 찾지 못했습니다.")
+                                st.write(f"   (DB에 존재하는 유저 목록: {df['username_norm'].unique().tolist()})")
                         else:
-                            st.error(f"3. 계정 데이터 없음: '{current_user}'와 일치하는 행을 찾지 못했습니다.")
-                            st.write(f"   (DB에 존재하는 유저 목록: {df['username_norm'].unique().tolist()})")
-                    else:
-                        st.error("오류: 'username' 컬럼이 시트에 없습니다.")
-                    st.dataframe(df.head())
-                    
-                # Debug Users Sheet
-                st.write("--- 데이터베이스 진단 결과 (유저) ---")
-                try:
-                    users_df = conn.read(worksheet="username", ttl=0)
-                    st.success("워크시트 'username' 로드 성공")
-                except:
+                            st.error("오류: 'username' 컬럼이 시트에 없습니다.")
+                        st.dataframe(df.head())
+                        
+                    # Debug Users Sheet
+                    st.write("--- 데이터베이스 진단 결과 (유저) ---")
                     try:
-                        users_df = conn.read(worksheet="Users", ttl=0)
-                        st.success("워크시트 'Users' 로드 성공")
+                        users_df = conn.read(worksheet="username", ttl=0)
+                        st.success("워크시트 'username' 로드 성공")
                     except:
                         try:
-                            users_df = conn.read(worksheet="users", ttl=0)
-                            st.success("워크시트 'users' 로드 성공")
-                        except Exception as ue:
-                            st.error(f"유저 시트 로드 실패: {ue}")
-                            users_df = pd.DataFrame()
-                
-                if not users_df.empty:
-                    st.write(f"유저 시트 컬럼: {users_df.columns.tolist()}")
-                    st.dataframe(users_df.head())
+                            users_df = conn.read(worksheet="Users", ttl=0)
+                            st.success("워크시트 'Users' 로드 성공")
+                        except:
+                            try:
+                                users_df = conn.read(worksheet="users", ttl=0)
+                                st.success("워크시트 'users' 로드 성공")
+                            except Exception as ue:
+                                st.error(f"유저 시트 로드 실패: {ue}")
+                                users_df = pd.DataFrame()
                     
-                st.write("----------------------------")
-            except Exception as e:
-                st.error(f"진단 중 오류 발생: {e}")
+                    if not users_df.empty:
+                        st.write(f"유저 시트 컬럼: {users_df.columns.tolist()}")
+                        st.dataframe(users_df.head())
+                        
+                    st.write("----------------------------")
+                except Exception as e:
+                    st.error(f"진단 중 오류 발생: {e}")
+            
+            if st.button("쿠키 강제 삭제 (Force Clear Cookies)", type="secondary"):
+                cookie_manager.delete("auth_user")
+                cookie_manager.delete("last_activity")
+                st.session_state.clear()
+                st.rerun()
+                
+            # Session Debug Info
+            with st.expander("세션 디버그 정보 (Session Debug)", expanded=False):
+                st.write(f"Session Username: {st.session_state.get('username')}")
+                st.write(f"Session Authenticated: {st.session_state.get('authenticated')}")
+                st.write(f"Cookie Auth User: {cookie_manager.get('auth_user')}")
+                st.write(f"Cookie Last Activity: {cookie_manager.get('last_activity')}")
+            
+            st.divider()
             
         if st.button("로그아웃"):
             logout()
-            
-        if st.button("쿠키 강제 삭제 (Force Clear Cookies)", type="secondary"):
-            cookie_manager.delete("auth_user")
-            cookie_manager.delete("last_activity")
-            st.session_state.clear()
-            st.rerun()
-            
-        # Session Debug Info
-        with st.expander("세션 디버그 정보 (Session Debug)", expanded=False):
-            st.write(f"Session Username: {st.session_state.get('username')}")
-            st.write(f"Session Authenticated: {st.session_state.get('authenticated')}")
-            st.write(f"Cookie Auth User: {cookie_manager.get('auth_user')}")
-            st.write(f"Cookie Last Activity: {cookie_manager.get('last_activity')}")
-            
-        st.divider()
 
     # Debug: Current User
     # st.write(f"Debug: Current Session User: {st.session_state.get('username')}")
