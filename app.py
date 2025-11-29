@@ -456,7 +456,8 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
     auth_user = cookie_manager.get("auth_user")
     last_activity = cookie_manager.get("last_activity")
     
-    st.write(f"Debug: Cookie Check - User={auth_user}, LastAct={last_activity}")
+    if st.session_state.get("is_admin", False):
+        st.write(f"Debug: Cookie Check - User={auth_user}, LastAct={last_activity}")
     
     if auth_user and last_activity and auth_user != "":
         try:
@@ -470,7 +471,8 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
                 st.warning("30분 동안 활동이 없어 로그아웃 되었습니다.")
             else:
                 # Restore Session
-                st.write(f"Debug: Restoring session from cookie for user: {auth_user}")
+                if st.session_state.get("is_admin", False):
+                    st.write(f"Debug: Restoring session from cookie for user: {auth_user}")
                 st.session_state["authenticated"] = True
                 st.session_state["username"] = auth_user # Restore username
                 # Update last activity
@@ -480,7 +482,8 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
         except ValueError:
             pass
     else:
-        st.write("Debug: No valid auth cookie found.")
+        if st.session_state.get("is_admin", False):
+            st.write("Debug: No valid auth cookie found.")
 
 if not st.session_state["authenticated"]:
     # Reset logged_out flag if we are showing login page (so next refresh can check cookies if needed? No, keep it until login)
@@ -492,19 +495,12 @@ else:
     if st.session_state.get("logged_out"):
         st.session_state["logged_out"] = False
         
-    st.write(f"Debug: Main Logic - Current User: {st.session_state.get('username')}")
+    if st.session_state.get("is_admin", False):
+        st.write(f"Debug: Main Logic - Current User: {st.session_state.get('username')}")
     # Update last activity timestamp on every interaction
     current_time = time.time()
     expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
-    # Only update if enough time passed to avoid excessive cookie writes? 
-    # Streamlit reruns on interaction, so updating here keeps it alive.
-    # To prevent infinite rerun loops, we don't call rerun() here, just set the cookie.
-    # CookieManager.set might trigger a rerun if key changes, but we are updating value.
-    # Let's check if we need to throttle. For now, simple update.
-    # Actually, setting cookie might trigger rerun. Let's only update if > 1 minute passed since last check?
-    # But we don't have easy access to 'last check' without reading cookie again.
-    # Let's trust the manager or just update.
-    # Optimization: Read cookie first, if diff < 60s, skip.
+    
     try:
         last_activity_cookie = cookie_manager.get("last_activity")
         if last_activity_cookie:
@@ -634,15 +630,11 @@ else:
             
         if st.button("로그아웃"):
             logout()
-
-    # Debug: Current User
-    # st.write(f"Debug: Current Session User: {st.session_state.get('username')}")
-
-    # --- Existing App Logic (Restored) ---
-    
+            
     # Load Config at Startup
     if 'config_loaded' not in st.session_state:
-        st.write("Debug: Calling load_config...")
+        if st.session_state.get("is_admin", False):
+            st.write("Debug: Calling load_config...")
         with st.spinner("데이터베이스에서 설정을 불러오는 중..."):
             loaded_config = load_config(st.session_state.get("username"))
             
@@ -696,6 +688,14 @@ else:
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
+                        st.warning(f"티어 설정 로드 중 오류: {e}")
+                        st.session_state.tier_config = []
+                else:
+                    st.session_state[k] = v
+            if "user_comments" in loaded_config:
+                st.session_state.user_comments = loaded_config["user_comments"]
+                
+        st.session_state.config_loaded = True
                         st.warning(f"티어 설정 로드 중 오류: {e}")
                         st.session_state.tier_config = []
                 else:
