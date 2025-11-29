@@ -111,7 +111,11 @@ def load_config(current_username=None):
         
         # 1. Try to find config for current user
         if current_username and "username" in df.columns and "ConfigJSON" in df.columns:
-            user_config = df[df["username"] == current_username]
+            # Normalize for comparison
+            df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+            target_user_norm = str(current_username).strip().lower()
+            
+            user_config = df[df["username_norm"] == target_user_norm]
             if not user_config.empty:
                 target_config_json = user_config.iloc[0]["ConfigJSON"]
         
@@ -140,9 +144,12 @@ def load_config(current_username=None):
                                 # Pick the first one found (as per requirement)
                                 target_config_json = admin_configs.iloc[0]["ConfigJSON"]
             except Exception as e:
-                # st.warning(f"관리자 설정 로드 실패: {e}")
+                st.error(f"관리자 설정 로드 실패: {e}")
                 pass
 
+        # Debug
+        # st.write(f"Debug: Loaded Config for {current_username}: {target_config_json is not None}")
+        
         # 3. Legacy Fallback: If no username column, or just one row exists (old format)
         if not target_config_json:
              if "ConfigJSON" in df.columns and len(df) > 0:
@@ -258,12 +265,22 @@ def save_config(current_username=None):
         else:
             # Check if username column exists
             if "username" in df.columns:
+                # Normalize for comparison
+                df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
+                target_user_norm = str(current_username).strip().lower()
+                
                 # Update existing user
-                if current_username in df["username"].values:
-                    df.loc[df["username"] == current_username, "ConfigJSON"] = json_str
+                if target_user_norm in df["username_norm"].values:
+                    # Find index
+                    idx = df.index[df["username_norm"] == target_user_norm].tolist()[0]
+                    df.at[idx, "ConfigJSON"] = json_str
+                    # Drop temp column
+                    df = df.drop(columns=["username_norm"])
                     df_to_save = df
                 else:
                     # Append new user
+                    # Drop temp column before concat if we want to be clean, but df is local.
+                    df = df.drop(columns=["username_norm"])
                     df_to_save = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             else:
                 # Migration: Add username column to existing (assume they are legacy/orphaned or assign to 'admin'?)
