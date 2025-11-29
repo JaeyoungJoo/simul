@@ -955,6 +955,7 @@ class FastSimulation:
         k_a = get_k(self.matches_played[idx_a], self.streak[idx_a])
         k_b = get_k(self.matches_played[idx_b], self.streak[idx_b])
         
+        goal_diff_abs = np.abs(goal_diff)
         goal_diff_bonus = np.zeros(len(idx_a))
         sorted_gd_rules = sorted(self.elo_config.goal_diff_rules, key=lambda x: float(x['min_diff']))
         for rule in sorted_gd_rules:
