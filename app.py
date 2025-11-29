@@ -530,6 +530,8 @@ else:
                                     df = conn.read(ttl=0)
                                     st.success("기본 시트 로드 성공!")
                                     st.write(f"기본 시트 컬럼: {df.columns.tolist()}")
+                                    st.warning("이 시트가 설정 시트라면, 탭 이름을 'Simul_Config'로 변경해 주세요.")
+                                except Exception as e5:
                                     st.error(f"기본 시트 로드도 실패: {e5}")
                                 st.exception(e4)
                         
