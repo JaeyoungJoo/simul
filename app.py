@@ -342,6 +342,35 @@ def save_config(current_username=None):
 # --- Authentication & Session Management ---
 cookie_manager = stx.CookieManager()
 
+def is_user_admin(username):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = pd.DataFrame()
+        try:
+            df = conn.read(worksheet="Users", ttl=0)
+        except Exception:
+            try:
+                df = conn.read(worksheet="users", ttl=0)
+            except:
+                return False
+        
+        if df.empty: return False
+        
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        if 'username' not in df.columns: return False
+        
+        df['username'] = df['username'].astype(str).str.strip()
+        user_row = df[df['username'] == username.strip()]
+        
+        if not user_row.empty and 'admin' in df.columns:
+            admin_val = user_row.iloc[0]['admin']
+            # Robust check for True, 'true', '1', '1.0', 'yes'
+            if str(admin_val).strip().lower() in ['true', '1', '1.0', 'yes']:
+                return True
+        return False
+    except:
+        return False
+
 def check_password(username, password):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -387,8 +416,8 @@ def check_password(username, password):
                 is_admin = False
                 if 'admin' in df.columns:
                     admin_val = user_row.iloc[0]['admin']
-                    # Handle various truthy values (True, 'TRUE', 'true', 1, '1')
-                    if str(admin_val).strip().lower() in ['true', '1', 'yes']:
+                    # Handle various truthy values (True, 'TRUE', 'true', 1, '1', '1.0')
+                    if str(admin_val).strip().lower() in ['true', '1', '1.0', 'yes']:
                         is_admin = True
                 return True, is_admin
             else:
@@ -471,10 +500,16 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
                 st.warning("30분 동안 활동이 없어 로그아웃 되었습니다.")
             else:
                 # Restore Session
-                if st.session_state.get("is_admin", False):
-                    st.write(f"Debug: Restoring session from cookie for user: {auth_user}")
+                # Check admin status again during restore
+                is_admin_restore = is_user_admin(auth_user)
+                
+                if is_admin_restore: # Use local var for debug print
+                    st.write(f"Debug: Restoring session from cookie for user: {auth_user} (Admin)")
+                
                 st.session_state["authenticated"] = True
                 st.session_state["username"] = auth_user # Restore username
+                st.session_state["is_admin"] = is_admin_restore # Restore admin status
+                
                 # Update last activity
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
                 cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
