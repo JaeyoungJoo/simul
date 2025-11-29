@@ -1500,6 +1500,64 @@ else:
                     else:
                         st.warning("세그먼트 인덱스를 찾을 수 없습니다.")
                     
+                    # --- First 3 Matches Analysis ---
+                    st.divider()
+                    st.markdown(f"#### '{selected_segment}' 세그먼트 초반 3경기 분석 (First 3 Matches Analysis)")
+                    
+                    if hasattr(sim, 'first_3_outcomes') and seg_idx != -1:
+                        # Filter users in this segment
+                        seg_mask = (sim.segment_indices == seg_idx)
+                        
+                        if seg_mask.any():
+                            # Get outcomes for these users
+                            outcomes = sim.first_3_outcomes[seg_mask]
+                            
+                            # Filter users who have played at least 3 matches (no -9)
+                            # Check if any -9 exists in the row
+                            valid_mask = ~np.any(outcomes == -9, axis=1)
+                            
+                            valid_outcomes = outcomes[valid_mask]
+                            total_valid = len(valid_outcomes)
+                            
+                            if total_valid > 0:
+                                # Convert to string patterns for counting
+                                # 1 -> 승, 0 -> 무, -1 -> 패
+                                pattern_map = {1: "승", 0: "무", -1: "패"}
+                                
+                                patterns = []
+                                for row in valid_outcomes:
+                                    p_str = "".join([pattern_map[x] for x in row])
+                                    patterns.append(p_str)
+                                
+                                # Count
+                                pattern_counts = pd.Series(patterns).value_counts()
+                                pattern_pct = (pattern_counts / total_valid * 100).round(1)
+                                
+                                # Display
+                                col_a, col_b = st.columns(2)
+                                
+                                with col_a:
+                                    st.write(f"분석 대상 유저: {total_valid}명 (3경기 완료)")
+                                    
+                                    # Create DataFrame for display
+                                    df_patterns = pd.DataFrame({
+                                        "패턴 (Pattern)": pattern_counts.index,
+                                        "유저 수 (Count)": pattern_counts.values,
+                                        "비율 (%)": pattern_pct.values
+                                    })
+                                    st.dataframe(df_patterns, use_container_width=True)
+                                    
+                                with col_b:
+                                    fig_pat = px.pie(df_patterns, values='유저 수 (Count)', names='패턴 (Pattern)', 
+                                                     title="초반 3경기 결과 분포")
+                                    st.plotly_chart(fig_pat, use_container_width=True)
+                            else:
+                                st.info("해당 세그먼트에 3경기를 완료한 유저가 없습니다.")
+                        else:
+                            st.warning("해당 세그먼트에 유저가 없습니다.")
+                    else:
+                        st.info("초반 3경기 데이터가 없거나 세그먼트를 찾을 수 없습니다.")
+                    
                     # Rank History Chart
                     if sim.tier_configs:
                         st.markdown("#### 랭크 변동 이력")

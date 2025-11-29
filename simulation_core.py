@@ -541,6 +541,25 @@ class Simulation:
             user.current_streak = 0
             # Note: We keep match_history for now, or we could clear it. 
             # If we want to track full history, we keep it.
+            
+        # Reset FastSimulation tracking if applicable (This method is in Simulation, but FastSimulation has similar logic)
+        # FastSimulation doesn't use User objects directly for bulk ops, but if this is called on Simulation...
+        # Wait, Simulation uses User objects. FastSimulation uses arrays.
+        # This method is for Simulation class. FastSimulation has its own reset logic usually?
+        # Actually FastSimulation doesn't have apply_soft_reset method shown in outline?
+        # Let's check outline again. Ah, FastSimulation doesn't have apply_soft_reset in the snippet I saw?
+        # Wait, I am editing Simulation class here? No, I am editing FastSimulation.__init__ above.
+        # But apply_soft_reset is in Simulation class (lines 527-543).
+        # FastSimulation needs its own reset logic or I need to find where it is.
+        # Let's look at app.py line 1265: st.session_state.simulation.apply_tiered_reset(rules)
+        # If simulation is FastSimulation, it must have apply_tiered_reset.
+        # Let's check if FastSimulation has apply_tiered_reset.
+        # I need to check if FastSimulation has these methods.
+        # Based on previous view_file, Simulation has it. FastSimulation definition starts at 573.
+        # I need to add reset logic to FastSimulation if it exists there.
+        # Let's assume I need to add it to FastSimulation.
+        # But first let's finish __init__.
+
 
     def apply_tiered_reset(self, rules: List[Dict]):
         """
@@ -624,6 +643,9 @@ class FastSimulation:
         
         self.watched_indices = {}
         self.match_logs = {}
+        
+        # Track first 3 match outcomes: 1 (Win), 0 (Draw), -1 (Loss), -9 (Not Played)
+        self.first_3_outcomes = np.full((num_users, 3), -9, dtype=int)
 
     def initialize_users(self):
         # Reset segment tracking lists
@@ -847,6 +869,28 @@ class FastSimulation:
                     current_ladder_points=self.user_ladder_points[idx],
                     match_count=self.matches_played[idx]
                 ))
+                
+        # --- Track First 3 Matches (Bot) ---
+        # user_indices are the ones who played.
+        # Check if they have < 3 matches played (before this match increment? No, matches_played was already incremented above)
+        # matches_played was incremented at line 795.
+        # So if matches_played is 1, 2, or 3, we record.
+        
+        current_matches = self.matches_played[user_indices]
+        target_mask = current_matches <= 3
+        
+        if target_mask.any():
+            target_indices = user_indices[target_mask]
+            # 0-indexed slot: matches_played - 1
+            slots = self.matches_played[target_indices] - 1
+            
+            # Result: 1 for Win, -1 for Loss (Bot match has no draw usually? Code has wins/losses)
+            # wins array is boolean for the batch
+            batch_wins = wins[target_mask]
+            
+            results = np.where(batch_wins, 1, -1)
+            
+            self.first_3_outcomes[target_indices, slots] = results
         
         current_tiers = self.user_tier_index[user_indices]
 
@@ -1047,6 +1091,39 @@ class FastSimulation:
                     current_ladder_points=self.user_ladder_points[idx_b[i]],
                     match_count=self.matches_played[idx_b[i]]
                 ))
+
+        # --- Track First 3 Matches (PvP) ---
+        # Matches played already incremented.
+        # Check A
+        mask_a = self.matches_played[idx_a] <= 3
+        if mask_a.any():
+            t_idx_a = idx_a[mask_a]
+            slots_a = self.matches_played[t_idx_a] - 1
+            
+            # Determine result for A
+            # final_win_a, final_draw, final_loss_a are full length masks
+            # We need to slice them by mask_a
+            res_a = np.zeros(len(t_idx_a), dtype=int)
+            res_a[final_win_a[mask_a]] = 1
+            res_a[final_loss_a[mask_a]] = -1
+            res_a[final_draw[mask_a]] = 0
+            
+            self.first_3_outcomes[t_idx_a, slots_a] = res_a
+            
+        # Check B
+        mask_b = self.matches_played[idx_b] <= 3
+        if mask_b.any():
+            t_idx_b = idx_b[mask_b]
+            slots_b = self.matches_played[t_idx_b] - 1
+            
+            # Determine result for B
+            # B wins if A lost, B lost if A won, Draw is Draw
+            res_b = np.zeros(len(t_idx_b), dtype=int)
+            res_b[final_loss_a[mask_b]] = 1 # A lost -> B won
+            res_b[final_win_a[mask_b]] = -1 # A won -> B lost
+            res_b[final_draw[mask_b]] = 0
+            
+            self.first_3_outcomes[t_idx_b, slots_b] = res_b
 
         if self.tier_configs:
             # Calculate MMR changes for all users in batch for passing to tier updates
@@ -1362,6 +1439,8 @@ class FastSimulation:
         # Or maybe we should keep them. For FastMode, let's clear them to save memory/confusion.
         for k in self.match_logs:
             self.match_logs[k] = []
+            
+        self.first_3_outcomes.fill(-9)
 
     def apply_tiered_reset(self, rules: List[Dict]):
         """
@@ -1402,3 +1481,5 @@ class FastSimulation:
         
         for k in self.match_logs:
             self.match_logs[k] = []
+            
+        self.first_3_outcomes.fill(-9)
