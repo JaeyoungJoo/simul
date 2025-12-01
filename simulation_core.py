@@ -595,13 +595,15 @@ class FastSimulation:
                  tier_configs: List[TierConfig] = None,
                  initial_mmr: float = 1000.0,
                  point_convergence_rate: float = 0.5,
-                 use_true_skill_init: bool = False):
+                 use_true_skill_init: bool = False,
+                 reset_rules: List[Dict] = None):
         self.num_users = num_users
         self.elo_config = elo_config
         self.match_config = match_config
         self.initial_mmr = initial_mmr
         self.point_convergence_rate = point_convergence_rate
         self.use_true_skill_init = use_true_skill_init
+        self.reset_rules = reset_rules if reset_rules else []
         self.segment_configs = segment_configs
         self.tier_configs = tier_configs if tier_configs else []
         self.day = 0
@@ -719,45 +721,51 @@ class FastSimulation:
         self.seg_matches_max = np.array(self.seg_matches_max)
 
         # Apply True Skill Based Initialization if enabled
-        if self.use_true_skill_init and self.tier_configs:
-            print("Applying True Skill Based Initialization...")
+        if self.use_true_skill_init:
+            print("Applying True Skill Based Initialization (using Reset Rules)...")
+            
+            # Pre-process rules for faster lookup if needed, but list iteration is fine for initialization
+            # Rules format: {'min_mmr': float, 'max_mmr': float, 'reset_mmr': float, ...}
+            
             for i in range(self.num_users):
                 ts = self.true_skill[i]
+                target_mmr = self.initial_mmr # Default fallback
                 
-                # Find matching tier for True Skill
-                target_tier = None
-                for config in self.tier_configs:
-                    if config.min_mmr <= ts < config.max_mmr:
-                        target_tier = config
+                # Find matching reset rule
+                matched_rule = None
+                for rule in self.reset_rules:
+                    # Handle potential string/float type issues from DF conversion
+                    r_min = float(rule.get('min_mmr', 0))
+                    r_max = float(rule.get('max_mmr', 99999))
+                    
+                    if r_min <= ts < r_max:
+                        matched_rule = rule
                         break
                 
-                # If no tier found (e.g. above max), try highest tier
-                if not target_tier and ts >= self.tier_configs[-1].max_mmr:
-                     target_tier = self.tier_configs[-1]
-                
-                if target_tier:
-                    # Assign random MMR within Placement Range
-                    # If placement range is not set (0), fallback to min/max of tier or initial_mmr?
-                    # Plan said: use placement_min_mmr and placement_max_mmr
-                    
-                    p_min = target_tier.placement_min_mmr
-                    p_max = target_tier.placement_max_mmr
-                    
-                    # Safety check: if placement range is 0 or invalid, fallback to tier range
-                    if p_min == 0 and p_max == 0:
-                        p_min = target_tier.min_mmr
-                        p_max = target_tier.max_mmr
-                        
-                    if p_max < p_min: # Swap if inverted
-                        p_min, p_max = p_max, p_min
-                        
-                    if p_min == p_max:
-                        self.mmr[i] = p_min
-                    else:
-                        self.mmr[i] = random.uniform(p_min, p_max)
+                if matched_rule:
+                    target_mmr = float(matched_rule.get('reset_mmr', self.initial_mmr))
                 else:
-                    # Fallback to initial_mmr if no tier covers this True Skill (e.g. too low)
-                    self.mmr[i] = self.initial_mmr
+                    # If no rule matches, check if it's above all rules (highest tier)
+                    # or below all rules.
+                    # Simple heuristic: if we have rules, find the closest one?
+                    # Or just fallback to initial_mmr.
+                    # Let's try to find if it's above the max of any rule
+                    if self.reset_rules:
+                        max_limit = 0
+                        best_rule = None
+                        for rule in self.reset_rules:
+                            r_max = float(rule.get('max_mmr', 0))
+                            if r_max > max_limit:
+                                max_limit = r_max
+                                best_rule = rule
+                        
+                        if ts >= max_limit and best_rule:
+                             # If True Skill is higher than any defined range, use the reset_mmr of the highest range
+                             # Or maybe we should have a specific rule for "everything else"
+                             # For now, let's use the highest range's target if TS is high
+                             target_mmr = float(best_rule.get('reset_mmr', self.initial_mmr))
+                
+                self.mmr[i] = target_mmr
         else:
              # Default: All start at initial_mmr (already set in __init__)
              pass

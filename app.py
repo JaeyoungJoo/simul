@@ -1241,7 +1241,8 @@ else:
                             match_config=match_config,
                             tier_configs=st.session_state.tier_config,
                             initial_mmr=st.session_state.initial_mmr,
-                            use_true_skill_init=st.session_state.get("use_true_skill_init", False)
+                            use_true_skill_init=st.session_state.get("use_true_skill_init", False),
+                            reset_rules=st.session_state.reset_rules.to_dict('records') if 'reset_rules' in st.session_state and isinstance(st.session_state.reset_rules, pd.DataFrame) else []
                         )
                         st.session_state.stats_history = []
                         st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")
