@@ -229,6 +229,7 @@ def save_config(current_username=None):
         "num_users": st.session_state.get("num_users", 1000),
         "num_days": st.session_state.get("num_days", 365),
         "initial_mmr": st.session_state.get("initial_mmr", 1000.0),
+        "use_true_skill_init": st.session_state.get("use_true_skill_init", False),
         # Match Config
         "draw_prob": st.session_state.get("draw_prob", 0.1),
         "prob_et": st.session_state.get("prob_et", 0.2),
@@ -762,6 +763,10 @@ else:
                         st.session_state.tier_config = []
                 else:
                     st.session_state[k] = v
+            
+            # Ensure default if not in config
+            if "use_true_skill_init" not in st.session_state:
+                st.session_state.use_true_skill_init = False
             if "user_comments" in loaded_config:
                 st.session_state.user_comments = loaded_config["user_comments"]
                 
@@ -806,7 +811,15 @@ else:
         with st.expander("기본 설정 (Global Settings)", expanded=True):
             st.session_state.num_users = st.number_input("유저 수 (Number of Users)", min_value=100, max_value=1000000, value=st.session_state.get("num_users", 1000), step=100, help="시뮬레이션에 참여할 총 유저 수입니다.")
             st.session_state.num_days = st.number_input("시뮬레이션 기간 (일)", min_value=1, max_value=3650, value=st.session_state.get("num_days", 365), help="시뮬레이션을 진행할 총 기간(일)입니다.")
-            st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
+            
+            st.session_state.use_true_skill_init = st.checkbox("True Skill 기반 초기 배치 (True Skill Based Initialization)", value=st.session_state.get("use_true_skill_init", False), help="체크 시, 유저의 True Skill이 속한 티어의 배치 구간에서 초기 MMR이 결정됩니다.")
+            
+            if st.session_state.use_true_skill_init:
+                st.caption("※ 초기 MMR 설정은 무시되고, 각 유저의 실력에 맞는 티어 배치 구간에서 시작합니다.")
+                # We keep initial_mmr in state but maybe disable it or just show it's ignored
+                st.session_state.initial_mmr = st.number_input("초기 MMR (기본값)", value=st.session_state.get("initial_mmr", 1000.0), disabled=True, help="True Skill 기반 배치 시에는 사용되지 않습니다 (매칭되지 않는 경우 제외).")
+            else:
+                st.session_state.initial_mmr = st.number_input("초기 MMR", value=st.session_state.get("initial_mmr", 1000.0), help="모든 유저의 시작 MMR 점수입니다.")
 
         with st.expander("매치 설정 (Match Configuration)"):
             st.session_state.draw_prob = st.slider("무승부 확률 (Draw Prob)", 0.0, 0.5, st.session_state.get("draw_prob", 0.15), help="정규 시간 내 무승부 확률입니다.")
@@ -1227,7 +1240,8 @@ else:
                             elo_config=elo_config,
                             match_config=match_config,
                             tier_configs=st.session_state.tier_config,
-                            initial_mmr=st.session_state.initial_mmr
+                            initial_mmr=st.session_state.initial_mmr,
+                            use_true_skill_init=st.session_state.get("use_true_skill_init", False)
                         )
                         st.session_state.stats_history = []
                         st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")

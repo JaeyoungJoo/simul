@@ -594,12 +594,14 @@ class FastSimulation:
                  elo_config: ELOConfig, match_config: MatchConfig, 
                  tier_configs: List[TierConfig] = None,
                  initial_mmr: float = 1000.0,
-                 point_convergence_rate: float = 0.5):
+                 point_convergence_rate: float = 0.5,
+                 use_true_skill_init: bool = False):
         self.num_users = num_users
         self.elo_config = elo_config
         self.match_config = match_config
         self.initial_mmr = initial_mmr
         self.point_convergence_rate = point_convergence_rate
+        self.use_true_skill_init = use_true_skill_init
         self.segment_configs = segment_configs
         self.tier_configs = tier_configs if tier_configs else []
         self.day = 0
@@ -715,6 +717,50 @@ class FastSimulation:
         self.seg_daily_prob = np.array(self.seg_daily_prob)
         self.seg_matches_min = np.array(self.seg_matches_min)
         self.seg_matches_max = np.array(self.seg_matches_max)
+
+        # Apply True Skill Based Initialization if enabled
+        if self.use_true_skill_init and self.tier_configs:
+            print("Applying True Skill Based Initialization...")
+            for i in range(self.num_users):
+                ts = self.true_skill[i]
+                
+                # Find matching tier for True Skill
+                target_tier = None
+                for config in self.tier_configs:
+                    if config.min_mmr <= ts < config.max_mmr:
+                        target_tier = config
+                        break
+                
+                # If no tier found (e.g. above max), try highest tier
+                if not target_tier and ts >= self.tier_configs[-1].max_mmr:
+                     target_tier = self.tier_configs[-1]
+                
+                if target_tier:
+                    # Assign random MMR within Placement Range
+                    # If placement range is not set (0), fallback to min/max of tier or initial_mmr?
+                    # Plan said: use placement_min_mmr and placement_max_mmr
+                    
+                    p_min = target_tier.placement_min_mmr
+                    p_max = target_tier.placement_max_mmr
+                    
+                    # Safety check: if placement range is 0 or invalid, fallback to tier range
+                    if p_min == 0 and p_max == 0:
+                        p_min = target_tier.min_mmr
+                        p_max = target_tier.max_mmr
+                        
+                    if p_max < p_min: # Swap if inverted
+                        p_min, p_max = p_max, p_min
+                        
+                    if p_min == p_max:
+                        self.mmr[i] = p_min
+                    else:
+                        self.mmr[i] = random.uniform(p_min, p_max)
+                else:
+                    # Fallback to initial_mmr if no tier covers this True Skill (e.g. too low)
+                    self.mmr[i] = self.initial_mmr
+        else:
+             # Default: All start at initial_mmr (already set in __init__)
+             pass
 
     def _initialize_tiers(self):
         for i in range(self.num_users):
