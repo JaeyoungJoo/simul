@@ -566,6 +566,19 @@ else:
     if st.session_state.get("logged_out"):
         st.session_state["logged_out"] = False
         
+    # Hide Streamlit Header/Toolbar for Non-Admins
+    if not st.session_state.get("is_admin", False):
+        st.markdown("""
+            <style>
+                header[data-testid="stHeader"] {
+                    visibility: hidden;
+                }
+                .stApp > header {
+                    display: none;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+        
     if st.session_state.get("is_admin", False):
         st.write(f"Debug: Main Logic - Current User: {st.session_state.get('username')}")
     # Update last activity timestamp on every interaction
