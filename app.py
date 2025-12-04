@@ -1132,6 +1132,34 @@ else:
                 st.error(f"세그먼트 표시 오류: {e}")
                 edited_segments = pd.DataFrame() # Fallback
             
+            # Bulk Input for Segments
+            seg_map = {
+                "세그먼트 이름": "name", "비율": "ratio", "일일 플레이 확률": "daily_play_prob",
+                "일일 최소 경기": "matches_per_day_min", "일일 최대 경기": "matches_per_day_max",
+                "최소 실력 (True Skill)": "true_skill_min", "최대 실력 (True Skill)": "true_skill_max",
+                "주요 활동 시작 시간": "active_hour_start", "주요 활동 종료 시간": "active_hour_end",
+                # English keys
+                "name": "name", "ratio": "ratio", "daily_play_prob": "daily_play_prob",
+                "matches_per_day_min": "matches_per_day_min", "matches_per_day_max": "matches_per_day_max",
+                "true_skill_min": "true_skill_min", "true_skill_max": "true_skill_max",
+                "active_hour_start": "active_hour_start", "active_hour_end": "active_hour_end"
+            }
+            new_seg_df = render_bulk_csv_uploader("유저 세그먼트", df_segments, "segment", seg_map)
+            if new_seg_df is not None:
+                try:
+                    bulk_segments = []
+                    for index, row in new_seg_df.iterrows():
+                        bulk_segments.append(SegmentConfig(
+                            str(row["name"]), float(row["ratio"]), float(row["daily_play_prob"]),
+                            float(row["matches_per_day_min"]), float(row["matches_per_day_max"]),
+                            float(row["true_skill_min"]), float(row["true_skill_max"]),
+                            int(row["active_hour_start"]), int(row["active_hour_end"])
+                        ))
+                    st.session_state.segments = bulk_segments
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"세그먼트 CSV 적용 오류: {e}")
+
             new_segments = []
             total_ratio = 0
             if not edited_segments.empty:
