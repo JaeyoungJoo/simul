@@ -32,63 +32,71 @@ def safe_create_tier_config(**kwargs):
             setattr(t, k, v)
         return t
 
-def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None):
-    with st.expander(f"{label} - CSV 일괄 입력 (Bulk Input)"):
-        st.caption("엑셀이나 CSV 데이터를 복사해서 붙여넣으세요. (첫 줄은 헤더여야 합니다)")
-        csv_input = st.text_area(f"CSV 데이터 붙여넣기 ({label})", key=f"csv_input_{key_suffix}")
-        if st.button(f"CSV 적용 ({label})", key=f"csv_apply_{key_suffix}"):
-            if csv_input:
-                try:
-                    # 1. Try reading with Python engine (auto-detect)
+def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None, use_expander=True):
+    container = None
+    if use_expander:
+        container = st.expander(f"{label} - CSV 일괄 입력 (Bulk Input)")
+    else:
+        if st.checkbox(f"CSV 일괄 입력 열기 ({label})", key=f"check_{key_suffix}"):
+            container = st.container()
+            
+    if container:
+        with container:
+            st.caption("엑셀이나 CSV 데이터를 복사해서 붙여넣으세요. (첫 줄은 헤더여야 합니다)")
+            csv_input = st.text_area(f"CSV 데이터 붙여넣기 ({label})", key=f"csv_input_{key_suffix}")
+            if st.button(f"CSV 적용 ({label})", key=f"csv_apply_{key_suffix}"):
+                if csv_input:
                     try:
-                        new_df = pd.read_csv(io.StringIO(csv_input), sep=None, engine='python')
-                    except:
-                        # Fallback to default
-                        new_df = pd.read_csv(io.StringIO(csv_input))
-                    
-                    # 2. Check if it looks like tab-separated but read as comma (1 column)
-                    if len(new_df.columns) == 1 and '\t' in csv_input:
-                         try:
-                            new_df = pd.read_csv(io.StringIO(csv_input), sep='\t')
-                         except:
-                            pass
-
-                    # 3. Apply Header Mapping (Korean Label -> English Key)
-                    if header_mapping:
-                        # Normalize columns: strip whitespace
-                        new_df.columns = new_df.columns.str.strip()
+                        # 1. Try reading with Python engine (auto-detect)
+                        try:
+                            new_df = pd.read_csv(io.StringIO(csv_input), sep=None, engine='python')
+                        except:
+                            # Fallback to default
+                            new_df = pd.read_csv(io.StringIO(csv_input))
                         
-                        # Create a reverse mapping check
-                        renamed_cols = {}
-                        for col in new_df.columns:
-                            if col in header_mapping:
-                                renamed_cols[col] = header_mapping[col]
-                        
-                        if renamed_cols:
-                            new_df = new_df.rename(columns=renamed_cols)
-
-                    # 4. Validation
-                    if not current_df.empty:
-                        # Check for missing required columns (intersection with current_df columns)
-                        # We only care if *required* columns are missing, but we don't know which are required here.
-                        # Just check overlap with current_df keys.
-                        expected_cols = set(current_df.columns)
-                        found_cols = set(new_df.columns)
-                        missing_cols = list(expected_cols - found_cols)
-                        
-                        # Filter out missing cols that might be optional or auto-generated if needed?
-                        # For now, just warn if high overlap is expected.
-                        if missing_cols and len(missing_cols) < len(expected_cols): # If some match but not all
-                             st.warning(f"주의: 다음 컬럼을 찾을 수 없습니다: {missing_cols}. (헤더 이름을 확인하세요)")
-                        elif len(missing_cols) == len(expected_cols):
-                             st.error(f"오류: 일치하는 컬럼이 없습니다. 헤더가 올바른지 확인하세요.\n기대하는 컬럼(또는 한글명): {list(header_mapping.keys()) if header_mapping else list(expected_cols)}")
-                             return None
-
-                    return new_df
-                except Exception as e:
-                    st.error(f"CSV 파싱 오류: {e}")
-            else:
-                st.warning("데이터를 입력하세요.")
+                        # 2. Check if it looks like tab-separated but read as comma (1 column)
+                        if len(new_df.columns) == 1 and '\t' in csv_input:
+                             try:
+                                new_df = pd.read_csv(io.StringIO(csv_input), sep='\t')
+                             except:
+                                pass
+    
+                        # 3. Apply Header Mapping (Korean Label -> English Key)
+                        if header_mapping:
+                            # Normalize columns: strip whitespace
+                            new_df.columns = new_df.columns.str.strip()
+                            
+                            # Create a reverse mapping check
+                            renamed_cols = {}
+                            for col in new_df.columns:
+                                if col in header_mapping:
+                                    renamed_cols[col] = header_mapping[col]
+                            
+                            if renamed_cols:
+                                new_df = new_df.rename(columns=renamed_cols)
+    
+                        # 4. Validation
+                        if not current_df.empty:
+                            # Check for missing required columns (intersection with current_df columns)
+                            # We only care if *required* columns are missing, but we don't know which are required here.
+                            # Just check overlap with current_df keys.
+                            expected_cols = set(current_df.columns)
+                            found_cols = set(new_df.columns)
+                            missing_cols = list(expected_cols - found_cols)
+                            
+                            # Filter out missing cols that might be optional or auto-generated if needed?
+                            # For now, just warn if high overlap is expected.
+                            if missing_cols and len(missing_cols) < len(expected_cols): # If some match but not all
+                                 st.warning(f"주의: 다음 컬럼을 찾을 수 없습니다: {missing_cols}. (헤더 이름을 확인하세요)")
+                            elif len(missing_cols) == len(expected_cols):
+                                 st.error(f"오류: 일치하는 컬럼이 없습니다. 헤더가 올바른지 확인하세요.\n기대하는 컬럼(또는 한글명): {list(header_mapping.keys()) if header_mapping else list(expected_cols)}")
+                                 return None
+    
+                        return new_df
+                    except Exception as e:
+                        st.error(f"CSV 파싱 오류: {e}")
+                else:
+                    st.warning("데이터를 입력하세요.")
     return None
 
 st.set_page_config(page_title="Rank Simulation", layout="wide")
@@ -1144,7 +1152,11 @@ else:
                 "true_skill_min": "true_skill_min", "true_skill_max": "true_skill_max",
                 "active_hour_start": "active_hour_start", "active_hour_end": "active_hour_end"
             }
-            new_seg_df = render_bulk_csv_uploader("유저 세그먼트", df_segments, "segment", seg_map)
+            # Use checkbox instead of expander to avoid nesting issue
+            # Also ensure df_segments is available (it should be from above, but if empty, create new)
+            if 'df_segments' not in locals(): df_segments = pd.DataFrame()
+            
+            new_seg_df = render_bulk_csv_uploader("유저 세그먼트", df_segments, "segment", seg_map, use_expander=False)
             if new_seg_df is not None:
                 try:
                     bulk_segments = []
