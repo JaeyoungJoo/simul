@@ -1671,18 +1671,53 @@ else:
                         seg_name = sim.watched_indices[target_idx]
                         logs = sim.match_logs.get(target_idx, [])
                         
-                        for log in logs:
+                        # Sort logs by day just in case
+                        # logs.sort(key=lambda x: x.day) # Assuming they are already sorted
+                        
+                        for i, log in enumerate(logs):
                             history_data.append({
-                                "Day": log.day,
-                                "MMR": log.current_mmr,
+                                "Match Count": i + 1,
+                                "Tier Index": log.current_tier_index,
+                                "Tier Name": sim.tier_configs[log.current_tier_index].name if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs) else "Unranked",
                                 "User": f"{seg_name} ({target_idx})"
                             })
                             
                     if history_data:
                         df_history = pd.DataFrame(history_data)
-                        fig_history = px.line(df_history, x="Day", y="MMR", color="User", 
-                                              title="Rank Variation History (Sample Users)",
-                                              markers=True)
+                        
+                        fig_history = go.Figure()
+                        
+                        # Plot each user as a separate trace
+                        # We use loop to ensure correct labeling and coloring if needed, 
+                        # but px.line is easier for multi-line.
+                        # However, for custom Y-axis ticks (Tier Names), we need to be careful.
+                        
+                        fig_history = px.line(df_history, x="Match Count", y="Tier Index", color="User",
+                                              title="Rank Variation History (Tier vs Match Count)",
+                                              markers=True,
+                                              hover_data=["Tier Name"])
+                        
+                        # Configure Y-axis to show Tier Names
+                        if sim.tier_configs:
+                            tier_names = [t.name for t in sim.tier_configs]
+                            tick_vals = list(range(len(tier_names)))
+                            tick_text = tier_names
+                            
+                            # Add Unranked if present in data (usually -1)
+                            # If we have -1 in data, we should include it in ticks
+                            if df_history["Tier Index"].min() == -1:
+                                tick_vals.insert(0, -1)
+                                tick_text.insert(0, "Unranked")
+                                
+                            fig_history.update_layout(
+                                yaxis=dict(
+                                    tickmode='array',
+                                    tickvals=tick_vals,
+                                    ticktext=tick_text,
+                                    title="Tier"
+                                )
+                            )
+                        
                         st.plotly_chart(fig_history, use_container_width=True)
                     else:
                         st.info("표시할 이력 데이터가 없습니다.")
