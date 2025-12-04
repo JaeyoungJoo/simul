@@ -1501,65 +1501,85 @@ else:
             sim = st.session_state.simulation
             # Fast Mode Logic
             st.info("고속 모드 활성: 세그먼트별 샘플 유저 보기")
-            dropdown_options = {}
-            for idx, name in sim.watched_indices.items():
-                label = f"{name} (ID: {idx})"
-                dropdown_options[label] = idx
-                
-            selected_label = st.selectbox("확인할 샘플 유저 선택", list(dropdown_options.keys()))
             
-            if selected_label:
-                target_idx = dropdown_options[selected_label]
-                selected_segment = sim.watched_indices[target_idx]
+            # Get all available segments from watched indices
+            # watched_indices is {user_idx: segment_name}
+            available_segments = sorted(list(set(sim.watched_indices.values())))
+            
+            selected_segments_multi = st.multiselect("확인할 세그먼트 선택 (다중 선택 가능)", available_segments, default=available_segments[:1] if available_segments else None)
+            
+            if selected_segments_multi:
+                # Find all sample users belonging to selected segments
+                target_indices = [idx for idx, seg_name in sim.watched_indices.items() if seg_name in selected_segments_multi]
                 
-                st.write(f"**샘플 유저 ID: {target_idx} ({selected_segment})**")
-                st.write(f"현재 MMR: {sim.mmr[target_idx]:.2f} | 실력(True Skill): {sim.true_skill[target_idx]:.2f}")
-                st.write(f"전적: {sim.wins[target_idx]}승 - {sim.draws[target_idx]}무 - {sim.losses[target_idx]}패")
-                
-                logs = sim.match_logs.get(target_idx, [])
-                if logs:
-                    log_data = []
-                    for log in logs:
-                        log_data.append({
-                            "Day": log.day,
-                            "Opponent ID": log.opponent_id,
-                            "Opponent MMR": f"{log.opponent_mmr:.1f}",
-                            "Opponent True Skill": f"{log.opponent_true_skill:.1f}",
-                            "Result": f"{log.result} ({log.result_type})",
-                            "Goal Diff": log.goal_diff,
-                            "Change": f"{log.mmr_change:+.1f}",
-                            "New MMR": f"{log.current_mmr:.1f}",
-                            "Tier": "Unranked (배치)" if log.current_tier_index == -1 else (sim.tier_configs[log.current_tier_index].name if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs) else "-"),
-                            "Ladder Points": log.current_ladder_points
-                        })
+                if not target_indices:
+                    st.warning("선택한 세그먼트에 해당하는 샘플 유저가 없습니다.")
+                else:
+                    st.write(f"**선택된 샘플 유저 수: {len(target_indices)}명**")
                     
-                    df_logs = pd.DataFrame(log_data)
-                    st.dataframe(df_logs)
-
-                    # --- Segment Statistics ---
-                    st.markdown(f"#### '{selected_segment}' 세그먼트 전체 통계")
+                    # 1. Aggregated Match Logs
+                    all_logs_data = []
                     
-                    # Identify all users in this segment
-                    # sim.segment_indices maps user_idx -> segment_index
-                    # We need to find which segment index corresponds to the name 'selected_segment'
-                    # sim.seg_names stores names by segment index
-                    
-                    seg_idx = -1
-                    if hasattr(sim, 'seg_names'):
-                        try:
-                            seg_idx = sim.seg_names.index(selected_segment)
-                        except ValueError:
-                            pass
-                    
-                    if seg_idx != -1:
-                        # Filter users
-                        seg_mask = (sim.segment_indices == seg_idx)
+                    for target_idx in target_indices:
+                        seg_name = sim.watched_indices[target_idx]
+                        current_mmr = sim.mmr[target_idx]
+                        current_ts = sim.true_skill[target_idx]
                         
-                        if seg_mask.any():
-                            seg_mmr = sim.mmr[seg_mask]
-                            seg_ts = sim.true_skill[seg_mask]
-                            seg_tier = sim.user_tier_index[seg_mask]
-                            seg_matches = sim.matches_played[seg_mask]
+                        logs = sim.match_logs.get(target_idx, [])
+                        for log in logs:
+                            all_logs_data.append({
+                                "User ID": target_idx,
+                                "Segment": seg_name,
+                                "Current MMR": f"{current_mmr:.1f}",
+                                "True Skill": f"{current_ts:.1f}",
+                                "Day": log.day,
+                                "Opponent ID": log.opponent_id,
+                                "Opponent MMR": f"{log.opponent_mmr:.1f}",
+                                "Opponent True Skill": f"{log.opponent_true_skill:.1f}",
+                                "Result": f"{log.result} ({log.result_type})",
+                                "Goal Diff": log.goal_diff,
+                                "Change": f"{log.mmr_change:+.1f}",
+                                "New MMR": f"{log.current_mmr:.1f}",
+                                "Tier": "Unranked (배치)" if log.current_tier_index == -1 else (sim.tier_configs[log.current_tier_index].name if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs) else "-"),
+                                "Ladder Points": log.current_ladder_points
+                            })
+                    
+                    if all_logs_data:
+                        df_logs = pd.DataFrame(all_logs_data)
+                        # Reorder columns
+                        cols = ["User ID", "Segment", "Current MMR", "True Skill", "Day", "Result", "Change", "New MMR", "Tier", "Opponent MMR", "Goal Diff"]
+                        # Add remaining columns
+                        cols += [c for c in df_logs.columns if c not in cols]
+                        df_logs = df_logs[cols]
+                        
+                        st.dataframe(df_logs, use_container_width=True)
+                    else:
+                        st.info("매치 기록이 없습니다.")
+
+                    # 2. Aggregated Segment Statistics
+                    st.divider()
+                    st.markdown(f"#### 선택된 세그먼트 통합 통계 ({', '.join(selected_segments_multi)})")
+                    
+                    # Identify all users in these segments (not just sample users)
+                    # sim.seg_names stores names by segment index
+                    target_seg_indices = []
+                    if hasattr(sim, 'seg_names'):
+                        for seg_name in selected_segments_multi:
+                            try:
+                                idx = sim.seg_names.index(seg_name)
+                                target_seg_indices.append(idx)
+                            except ValueError:
+                                pass
+                    
+                    if target_seg_indices:
+                        # Create mask for all users in selected segments
+                        combined_mask = np.isin(sim.segment_indices, target_seg_indices)
+                        
+                        if combined_mask.any():
+                            seg_mmr = sim.mmr[combined_mask]
+                            seg_ts = sim.true_skill[combined_mask]
+                            seg_tier = sim.user_tier_index[combined_mask]
+                            seg_matches = sim.matches_played[combined_mask]
                             
                             # Helper to get tier name
                             def get_tier_name(idx):
@@ -1573,7 +1593,6 @@ else:
                             med_tier = np.median(seg_tier)
                             max_tier = np.max(seg_tier)
 
-                            # Calculate Stats with pre-formatting
                             stats_data = {
                                 "Metric": ["Current MMR", "True Skill", "Tier", "Match Count"],
                                 "Min": [
@@ -1599,131 +1618,76 @@ else:
                             df_stats = pd.DataFrame(stats_data)
                             st.dataframe(df_stats, use_container_width=True)
                         else:
-                            st.warning("해당 세그먼트에 속한 유저가 없습니다.")
-                    else:
-                        st.warning("세그먼트 인덱스를 찾을 수 없습니다.")
+                            st.warning("선택된 세그먼트에 속한 유저가 없습니다.")
                     
-                    # --- First 3 Matches Analysis ---
+                    # 3. Aggregated First 3 Matches Analysis
                     st.divider()
-                    st.markdown(f"#### '{selected_segment}' 세그먼트 초반 3경기 분석 (First 3 Matches Analysis)")
+                    st.markdown(f"#### 초반 3경기 분석 (통합)")
                     
-                    # Migration: Initialize if missing (for hot-reloading)
-                    if not hasattr(sim, 'first_3_outcomes'):
-                        sim.first_3_outcomes = np.full((sim.num_users, 3), -9, dtype=int)
-                        st.warning("⚠️ 새로운 분석 기능이 추가되었습니다. 데이터 수집을 위해 시뮬레이션을 계속 진행해주세요.")
-                    
-                    if hasattr(sim, 'first_3_outcomes') and seg_idx != -1:
-                        # Filter users in this segment
-                        seg_mask = (sim.segment_indices == seg_idx)
+                    if hasattr(sim, 'first_3_outcomes') and target_seg_indices:
+                        # Filter users
+                        combined_mask = np.isin(sim.segment_indices, target_seg_indices)
                         
-                        if seg_mask.any():
-                            # Get outcomes for these users
-                            outcomes = sim.first_3_outcomes[seg_mask]
-                            
-                            # Filter users who have played at least 3 matches (no -9)
-                            # Check if any -9 exists in the row
+                        if combined_mask.any():
+                            outcomes = sim.first_3_outcomes[combined_mask]
                             valid_mask = ~np.any(outcomes == -9, axis=1)
-                            
                             valid_outcomes = outcomes[valid_mask]
                             total_valid = len(valid_outcomes)
                             
                             if total_valid > 0:
-                                # Group by counts (Win/Draw/Loss)
                                 patterns = []
                                 for row in valid_outcomes:
                                     wins = np.sum(row == 1)
                                     draws = np.sum(row == 0)
                                     losses = np.sum(row == -1)
                                     
-                                    # Format: "X승 Y무 Z패" (omit 0 counts if preferred, but user asked for "1승 2패")
-                                    # Let's show all non-zero or just standard format?
-                                    # User example: "승승승 10% / 승무패 5% / 승패패 1%" -> "3승", "1승 1무 1패", "1승 2패"
-                                    # Let's use full format for clarity: "X승 Y무 Z패"
-                                    # Or maybe cleaner: "X승 Y패" if draws 0.
-                                    
                                     parts = []
                                     if wins > 0: parts.append(f"{wins}승")
                                     if draws > 0: parts.append(f"{draws}무")
                                     if losses > 0: parts.append(f"{losses}패")
                                     
-                                    if not parts:
-                                        p_str = "0승 0무 0패" # Should not happen with valid logic
-                                    else:
-                                        p_str = " ".join(parts)
-                                        
+                                    if not parts: p_str = "0승 0무 0패"
+                                    else: p_str = " ".join(parts)
                                     patterns.append(p_str)
                                 
-                                # Count
                                 pattern_counts = pd.Series(patterns).value_counts()
-                                pattern_pct = (pattern_counts / total_valid * 100).round(1)
+                                df_patterns = pd.DataFrame({
+                                    "Pattern": pattern_counts.index,
+                                    "Count": pattern_counts.values,
+                                    "Percentage": (pattern_counts.values / total_valid * 100).round(1)
+                                })
+                                df_patterns["Percentage"] = df_patterns["Percentage"].apply(lambda x: f"{x}%")
                                 
-                                # Display
-                                col_a, col_b = st.columns(2)
-                                
-                                with col_a:
-                                    st.write(f"분석 대상 유저: {total_valid}명 (3경기 완료)")
-                                    
-                                    # Create DataFrame for display
-                                    df_patterns = pd.DataFrame({
-                                        "결과 (Result)": pattern_counts.index,
-                                        "유저 수 (Count)": pattern_counts.values,
-                                        "비율 (%)": pattern_pct.values
-                                    })
-                                    st.dataframe(df_patterns, use_container_width=True)
-                                    
-                                with col_b:
-                                    fig_pat = px.pie(df_patterns, values='유저 수 (Count)', names='결과 (Result)', 
-                                                     title="초반 3경기 결과 분포 (합산)")
-                                    st.plotly_chart(fig_pat, use_container_width=True)
+                                st.dataframe(df_patterns, use_container_width=True)
                             else:
-                                st.info("해당 세그먼트에 3경기를 완료한 유저가 없습니다.")
-                        else:
-                            st.warning("해당 세그먼트에 유저가 없습니다.")
-                    else:
-                        st.info("초반 3경기 데이터가 없거나 세그먼트를 찾을 수 없습니다.")
+                                st.info("초반 3경기를 완료한 유저가 없습니다.")
                     
-                    # Rank History Chart
-                    if sim.tier_configs:
-                        st.markdown("#### 랭크 변동 이력")
-                        # Map Tier Name to Index for Y-axis, but show Name
-                        # Or just plot Index
+                    # 4. Rank History Graph (Sample Users)
+                    st.divider()
+                    st.markdown("#### 랭크 변동 이력 (Sample Users)")
+                    
+                    history_data = []
+                    for target_idx in target_indices:
+                        seg_name = sim.watched_indices[target_idx]
+                        logs = sim.match_logs.get(target_idx, [])
                         
-                        fig_rank = go.Figure()
-                        
-                        # Extract history
-                        # Use match_count if available, else fallback to day (for legacy logs)
-                        x_vals = [getattr(l, 'match_count', l.day) for l in logs]
-                        tier_indices = [l.current_tier_index for l in logs]
-                        points = [l.current_ladder_points for l in logs]
-                        
-                        # Primary Y: Tier
-                        fig_rank.add_trace(go.Scatter(x=x_vals, y=tier_indices, name="Tier Level", mode='lines+markers', line=dict(shape='hv')))
-                        
-                        # Secondary Y: Points (Optional, maybe too cluttered? Let's just show Tier for now)
-                        # Or show points as hover text
-                        
-                        # Custom Y-axis ticks
-                        tier_names = [t.name for t in sim.tier_configs]
-                        tick_vals = list(range(len(tier_names)))
-                        tick_text = tier_names
-                        
-                        # Add Unranked
-                        tick_vals.insert(0, -1)
-                        tick_text.insert(0, "Unranked")
-
-                        fig_rank.update_layout(
-                            yaxis=dict(
-                                tickmode='array',
-                                tickvals=tick_vals,
-                                ticktext=tick_text,
-                                title="Tier"
-                            ),
-                            xaxis=dict(title="Match Count"),
-                            title="매치 수별 티어 변화"
-                        )
-                        st.plotly_chart(fig_rank, use_container_width=True)
-                else:
-                    st.info("진행된 경기가 없습니다.")
+                        for log in logs:
+                            history_data.append({
+                                "Day": log.day,
+                                "MMR": log.current_mmr,
+                                "User": f"{seg_name} ({target_idx})"
+                            })
+                            
+                    if history_data:
+                        df_history = pd.DataFrame(history_data)
+                        fig_history = px.line(df_history, x="Day", y="MMR", color="User", 
+                                              title="Rank Variation History (Sample Users)",
+                                              markers=True)
+                        st.plotly_chart(fig_history, use_container_width=True)
+                    else:
+                        st.info("표시할 이력 데이터가 없습니다.")
+            else:
+                st.info("세그먼트를 선택하세요.")
         else:
             st.info("매치 기록을 보려면 먼저 시뮬레이션을 실행하세요.")
 
