@@ -130,12 +130,14 @@ class User:
         return self.wins / self.matches_played
 
 class FastSimulation:
-    def __init__(self, num_users, segment_configs: List[SegmentConfig], elo_config: ELOConfig, match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200):
+    def __init__(self, num_users, segment_configs: List[SegmentConfig], elo_config: ELOConfig, match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None):
         self.num_users = num_users
         self.segment_configs = segment_configs
         self.elo_config = elo_config
         self.match_config = match_config
         self.tier_configs = tier_configs
+        self.use_true_skill_init = use_true_skill_init
+        self.reset_rules = reset_rules if reset_rules else []
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
@@ -187,6 +189,10 @@ class FastSimulation:
             # Activity
             self.activity_prob[indices] = seg.daily_play_prob
             self.matches_per_day[indices] = np.random.randint(seg.matches_per_day_min, seg.matches_per_day_max + 1, len(indices))
+            
+            # Use True Skill for Initial MMR if requested
+            if self.use_true_skill_init:
+                self.mmr[indices] = self.true_skill[indices]
             
             start_idx = end_idx
 
