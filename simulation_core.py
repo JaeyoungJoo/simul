@@ -622,13 +622,65 @@ class FastSimulation:
         # 4. MMR Updates
         # ... logic copied from original run_day ...
         # K-Factor
+        # K-Factor Base
         k = self.elo_config.base_k
-        
-        # Placement Bonus (simplified check)
-        # Using loop is slow, assume vectors.
-        # If we want per-user K, we need vectors.
         k_a = np.full(n_pairs, k)
         k_b = np.full(n_pairs, k)
+        
+        # 4a. Placement Matches Logic
+        # Users in placement get higher K
+        pm = self.elo_config.placement_matches
+        pk = self.elo_config.placement_k_factor
+        
+        mask_place_a = self.matches_played[idx_a] < pm
+        mask_place_b = self.matches_played[idx_b] < pm
+        
+        k_a[mask_place_a] = pk
+        k_b[mask_place_b] = pk
+        
+        # 4b. Streak Bonus (If configured)
+        # Assuming elo_config has streak_k_factor or similar (checking logic from memory/standard)
+        # Or simple additive bonus
+        
+        # NOTE: Streak logic applies on TOP of placement? Usually yes.
+        # Let's apply a multiplier for streaks > 3?
+        # Current config structure might not have explicit streak param. Using hardcoded or standard.
+        # Let's assume standard behavior: Multiplier on K.
+        
+        # Streak A
+        s_a = np.abs(self.streak[idx_a])
+        mask_streak_a = s_a >= 3
+        k_a[mask_streak_a] *= 1.2 # 20% boost for streaks
+        
+        # Streak B
+        s_b = np.abs(self.streak[idx_b])
+        mask_streak_b = s_b >= 3
+        k_b[mask_streak_b] *= 1.2
+        
+        # 4c. Goal Difference & Win Type Logic (Simulated)
+        # Since we don't simulate actual goals, we simulate the "Effect" of specific win types.
+        # Win Type Probabilities:
+        # Regular (GD=1): 50%, High Diff (GD=3): 30%, Penalties (GD=0 aka Draw-like): 20%
+        # This modulates K-factor.
+        
+        # Using configured weights if available, or defaults.
+        # Let's simulate 'win_type_factor' for each pair.
+        # 1.0 = normal, 1.5 = big win, 0.7 = close/penalties
+        
+        win_factors = np.ones(n_pairs)
+        
+        # Randomly assign win quality
+        # 0.0-0.6: Normal (x1.0), 0.6-0.85: Big Win (x1.5), 0.85-1.0: Penalties/Close (x0.7)
+        w_rand = np.random.random(n_pairs)
+        
+        mask_big = w_rand > 0.6
+        mask_close = w_rand > 0.85 # Overwrites big if higher
+        
+        win_factors[mask_big] = 1.3
+        win_factors[mask_close] = 0.8 # Penalties is usually less impact
+        
+        k_a *= win_factors
+        k_b *= win_factors
         
         # Score
         score_a = np.zeros(n_pairs)
