@@ -552,74 +552,71 @@ class FastSimulation:
         loss_indices = np.where(loss_mask)[0]
         
         self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
-        
         # 6. Log Matches
         watched_set = set(self.watched_indices.keys())
         if not watched_set: return
         
-        # Logging logic (condensed)
+        # print(f"DEBUG: Logging Batch. Pairs {n_pairs} Watched {len(watched_set)}")
+        
+        # Helper to log
+        def log_match(u_idx, opp_idx, res, res_type, gd, d_mmr, cur_mmr, cur_tier, cur_pts):
+            if u_idx not in watched_set: return
+            if u_idx not in self.match_logs: self.match_logs[u_idx] = []
+            
+            # print(f"DEBUG: Logging for {u_idx}. Change {d_mmr:.2f} New {cur_mmr:.2f}")
+            
+            opp_mmr = self.mmr[opp_idx]
+            opp_ts = self.true_skill[opp_idx]
+            
+            self.match_logs[u_idx].append(MatchLog(
+                day=self.day,
+                hour=0,
+                opponent_id=int(self.ids[opp_idx]),
+                opponent_mmr=float(opp_mmr),
+                opponent_true_skill=float(opp_ts),
+                result=res,
+                result_type=res_type,
+                goal_diff=int(gd),
+                mmr_change=float(d_mmr),
+                current_mmr=float(cur_mmr),
+                current_tier_index=int(cur_tier),
+                current_ladder_points=int(cur_pts),
+                match_count=int(self.matches_played[u_idx])
+            ))
+
         for i in range(n_pairs):
-            u_a, u_b = idx_a[i], idx_b[i]
-            if u_a not in watched_set and u_b not in watched_set: continue
+            u_a = idx_a[i]
+            u_b = idx_b[i]
             
-            res_a = "Win" if win_mask[i] else ("Loss" if loss_mask[i] else "Draw")
-            res_b = "Loss" if win_mask[i] else ("Win" if loss_mask[i] else "Draw")
-            gd = 1 if res_a != "Draw" else 0
+            # if u_a == 0 or u_b == 0:
+            #      print(f"DEBUG: Trace Match Pair {i}. {u_a} vs {u_b}. Watched? {u_a in watched_set}/{u_b in watched_set}")
             
-            if u_a in watched_set:
-                 if u_a not in self.match_logs: self.match_logs[u_a] = []
-                 self.match_logs[u_a].append(MatchLog(
-                    day=self.day, hour=0, opponent_id=int(self.ids[u_b]), opponent_mmr=float(self.mmr[u_b]),
-                    opponent_true_skill=float(self.true_skill[u_b]), result=res_a, result_type="Regular", goal_diff=gd,
-                    mmr_change=float(delta_a[i]), current_mmr=float(self.mmr[u_a]), current_tier_index=int(self.user_tier_index[u_a]),
-                    current_ladder_points=int(self.user_ladder_points[u_a]), match_count=int(self.matches_played[u_a])
-                 ))
-            if u_b in watched_set:
-                 if u_b not in self.match_logs: self.match_logs[u_b] = []
-                 self.match_logs[u_b].append(MatchLog(
-                    day=self.day, hour=0, opponent_id=int(self.ids[u_a]), opponent_mmr=float(self.mmr[u_a]),
-                    opponent_true_skill=float(self.true_skill[u_a]), result=res_b, result_type="Regular", goal_diff=gd,
-                    mmr_change=float(delta_b[i]), current_mmr=float(self.mmr[u_b]), current_tier_index=int(self.user_tier_index[u_b]),
-                    current_ladder_points=int(self.user_ladder_points[u_b]), match_count=int(self.matches_played[u_b])
-                 ))
-        
-        # Calculate Scores
-        scores_a = np.zeros(n_pairs)
-        scores_a[win_mask] = 1.0
-        scores_a[draw_mask] = 0.5
-        scores_a[loss_mask] = 0.0
-        
-        scores_b = 1.0 - scores_a
-        
-        # 4. MMR Updates (Simple K-Factor)
-        # FastSimulation uses simplified K (base + maybe streak bonus average?)
-        # For full fidelity we'd iterate streaks, but for Speed we use Base K or simplified.
-        # Let's use Base K * Placement Bonus if applicable (checking matches_played)
-        
-        k_a = np.full(n_pairs, self.elo_config.base_k, dtype=float)
-        k_b = np.full(n_pairs, self.elo_config.base_k, dtype=float)
-        
-        mps_a = self.matches_played[idx_a]
-        mps_b = self.matches_played[idx_b]
-        
-        # Placement Bonus
-        place_mask_a = mps_a < self.elo_config.placement_matches
-        k_a[place_mask_a] *= self.elo_config.placement_bonus
-        
-        place_mask_b = mps_b < self.elo_config.placement_matches
-        k_b[place_mask_b] *= self.elo_config.placement_bonus
-        
-        # Calc Delta
-        delta_a = k_a * (scores_a - prob_a)
-        delta_b = k_b * (scores_b - (1.0 - prob_a))
-        
-        # Update MMR
-        self.mmr[idx_a] += delta_a
-        self.mmr[idx_b] += delta_b
-        
-        # Update Stats
-        self.matches_played[idx_a] += 1
-        self.matches_played[idx_b] += 1
+            is_a_watched = u_a in watched_set
+            is_b_watched = u_b in watched_set
+            
+            if not is_a_watched and not is_b_watched:
+                continue
+                
+            # Extract Match Details
+            if win_mask[i]:
+                res_a, res_b = "Win", "Loss"
+            elif loss_mask[i]:
+                res_a, res_b = "Loss", "Win"
+            else:
+                res_a, res_b = "Draw", "Draw"
+                
+            res_type = "Regular"
+            
+            if res_a == "Draw":
+                gd = 0
+            else:
+                 gd = 1
+            
+            if is_a_watched:
+                log_match(u_a, u_b, res_a, res_type, gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
+            
+            if is_b_watched:
+                log_match(u_b, u_a, res_b, res_type, gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
         
     def expected_score(self, rating_a: float, rating_b: float) -> float:
         return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
@@ -716,65 +713,6 @@ class FastSimulation:
         outcome_a = "" # Win/Loss/Draw
         result_type = "Regular"
         actual_score_a = 0.5
-        
-        # Determine Base Outcome (Regular Time)
-        if rand < self.match_config.draw_prob:
-            # Draw in Regular Time
-            # Check Extra Time
-            if random.random() < self.match_config.prob_extra_time:
-                # Goes to Extra Time
-                # Recalculate win prob for ET (simplified, use same prob)
-                rand_et = random.random()
-                if rand_et < 0.5: # Simplified 50/50 in ET for now or reuse prob
-                     # Actually let's use original prob re-normalized
-                     if random.random() < prob_a_win:
-                         outcome_a = "Win"
-                         result_type = "Extra"
-                         actual_score_a = 1.0
-                     else:
-                         outcome_a = "Loss"
-                         result_type = "Extra"
-                         actual_score_a = 0.0
-                else:
-                    # Draw in ET, check PK
-                    if random.random() < self.match_config.prob_pk:
-                        # Goes to PK
-                        if random.random() < 0.5: # PK is mostly luck
-                            outcome_a = "Win"
-                            result_type = "PK"
-                            actual_score_a = 1.0
-                        else:
-                            outcome_a = "Loss"
-                            result_type = "PK"
-                            actual_score_a = 0.0
-                    else:
-                         outcome_a = "Draw"
-                         result_type = "Regular" # Or 'Extra' but draw
-                         actual_score_a = 0.5
-            else:
-                outcome_a = "Draw"
-                result_type = "Regular"
-                actual_score_a = 0.5
-        else:
-            # Decisive in Regular Time
-            remaining = 1.0 - self.match_config.draw_prob
-            if rand < self.match_config.draw_prob + (prob_a_win * remaining):
-                outcome_a = "Win"
-                result_type = "Regular"
-                actual_score_a = 1.0
-            else:
-                outcome_a = "Loss"
-                result_type = "Regular"
-                actual_score_a = 0.0
-
-        # 2. Determine Goal Difference
-        # Correlate with skill diff
-        skill_diff = (user_a.true_skill - user_b.true_skill) / 100.0
-        base_diff = abs(int(np.random.normal(skill_diff, 1.0)))
-        goal_diff = min(max(1, base_diff), self.match_config.max_goal_diff)
-        
-        if outcome_a == "Draw":
-            goal_diff = 0
             
         # 3. Update Ratings
         is_cal_a = self.match_config.calibration_enabled and user_a.matches_played < self.match_config.calibration_match_count
