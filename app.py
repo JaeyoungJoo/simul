@@ -1752,6 +1752,12 @@ else:
                                 st.dataframe(df_patterns, use_container_width=True)
                             else:
                                 st.info("초반 3경기를 완료한 유저가 없습니다.")
+                        else:
+                             st.write(f"Debug: No users in selected segments? target_indices: {target_seg_indices}")
+                    else:
+                        st.write("Debug: Sim has no first_3_outcomes or no target indices")
+                        if not hasattr(sim, 'first_3_outcomes'): st.write("Debug: Missing 'first_3_outcomes' attribute.")
+                        if not target_seg_indices: st.write("Debug: No target segment indices found.")
                     
                     # 4. Rank History Graph (Sample Users)
                     st.divider()

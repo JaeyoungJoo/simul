@@ -602,6 +602,11 @@ class FastSimulation:
         delta_a = k_a * (score_a - prob_a)
         delta_b = k_b * (score_b - (1.0 - prob_a))
         
+        # Zero-Sum Check (Debug)
+        # total_delta = np.sum(delta_a + delta_b)
+        # if abs(total_delta) > 0.1:
+        #     print(f"WARNING: Non-Zero Sum Batch! Sum: {total_delta:.4f} (Pairs: {n_pairs})")
+            
         # Apply
         self.mmr[idx_a] += delta_a
         self.mmr[idx_b] += delta_b
