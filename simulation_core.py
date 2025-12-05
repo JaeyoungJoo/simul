@@ -138,6 +138,7 @@ class FastSimulation:
         self.tier_configs = tier_configs
         self.use_true_skill_init = use_true_skill_init
         self.reset_rules = reset_rules if reset_rules else []
+        self.day = 0 # Track current day
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
@@ -377,9 +378,11 @@ class FastSimulation:
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
     def run_day(self, day=None):
-        if day is None:
-            day = 0 # Default if not provided
-            
+        if day is not None:
+             self.day = day
+        else:
+             self.day += 1
+              
         # 1. Identify daily active users
         # For efficiency, we can simulate one match per active user pair
         # Or multiple if matches_per_day > 1. For FastSim, let's assume 1 match per active "session"
