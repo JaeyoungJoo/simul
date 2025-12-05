@@ -1617,10 +1617,11 @@ else:
                         
                         logs = sim.match_logs.get(target_idx, [])
                         for log in logs:
+                            pre_mmr = log.current_mmr - log.mmr_change
                             all_logs_data.append({
                                 "User ID": target_idx,
                                 "Segment": seg_name,
-                                "Current MMR": f"{current_mmr:.1f}",
+                                "Current MMR": f"{pre_mmr:.1f}",
                                 "True Skill": f"{current_ts:.1f}",
                                 "Day": log.day,
                                 "Opponent ID": log.opponent_id,
