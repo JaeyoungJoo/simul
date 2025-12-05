@@ -68,6 +68,7 @@ class ELOConfig:
     base_k: int = 32
     placement_matches: int = 10
     placement_bonus: float = 4.0
+    placement_k_factor: float = 64.0 # Dedicated K-Factor for placement matches (if used instead of bonus logic)
     streak_rules: List[Dict] = field(default_factory=list) # [{'min_streak': 3, 'bonus': 5.0}, ...]
     goal_diff_rules: List[Dict] = field(default_factory=list) # [{'min_diff': 2, 'bonus': 2.0}, ...]
     win_type_decay: Dict[str, float] = field(default_factory=lambda: {'Regular': 1.0, 'Extra': 0.8, 'PK': 0.6})
