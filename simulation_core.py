@@ -504,7 +504,7 @@ class FastSimulation:
         # 4. MMR Updates
         # ... logic copied from original run_day ...
         # K-Factor
-        k = self.match_config.base_k_factor
+        k = self.elo_config.base_k
         
         # Placement Bonus (simplified check)
         # Using loop is slow, assume vectors.
