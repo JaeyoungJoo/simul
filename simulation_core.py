@@ -165,7 +165,6 @@ class FastSimulation:
             self.user_demotion_lives[:] = self.tier_configs[0].demotion_lives
         
         # True Skill & Activity (for Matchmaking simulation)
-        # True Skill & Activity (for Matchmaking simulation)
         self.true_skill = np.zeros(num_users)
         self.activity_prob = np.zeros(num_users)
         self.matches_per_day = np.zeros(num_users, dtype=int)
@@ -205,7 +204,8 @@ class FastSimulation:
                 self.mmr[indices] = self.true_skill[indices]
             
             # Watch a few users from each segment for logs
-            sample_count = min(len(indices), 5)
+            # Watch a few users from each segment for logs
+            sample_count = min(len(indices), 1)
             for idx in indices[:sample_count]:
                 self.watched_indices[idx] = seg.name
                 
