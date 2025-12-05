@@ -140,6 +140,7 @@ class FastSimulation:
         self.reset_rules = reset_rules if reset_rules else []
         self.day = 0 # Track current day
         self.seg_names = [s.name for s in segment_configs]
+        self.watched_indices = {} # {idx: segment_name}
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
@@ -201,6 +202,15 @@ class FastSimulation:
             if self.use_true_skill_init:
                 self.mmr[indices] = self.true_skill[indices]
             
+            # Use True Skill for Initial MMR if requested
+            if self.use_true_skill_init:
+                self.mmr[indices] = self.true_skill[indices]
+            
+            # Watch a few users from each segment for logs
+            sample_count = min(len(indices), 5)
+            for idx in indices[:sample_count]:
+                self.watched_indices[idx] = seg.name
+                
             start_idx = end_idx
 
     def _assign_placement_tier(self, user_indices):
