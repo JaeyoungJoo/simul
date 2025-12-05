@@ -200,18 +200,36 @@ def load_config(current_username=None):
         if target_config_json:
             config_dict = json.loads(target_config_json)
             
-            # Inject Comment from column if it exists and we found a user config
+            # --- Merge Split Configs (Tier & Segment) ---
+            # If TierConfigJSON exists in the row, load and merge/override
             if current_username and "username" in df.columns:
-                 # Re-find user row to get comment (redundant but safe)
-                 # Normalize for comparison
+                 # Re-find user row (optimization: we already have user_config df from above if we restructuring)
+                 # But let's reuse logic for safety
                 df["username_norm"] = df["username"].astype(str).str.strip().str.lower()
                 target_user_norm = str(current_username).strip().lower()
                 user_config = df[df["username_norm"] == target_user_norm]
                 
-                if not user_config.empty and "Comment" in user_config.columns:
-                    comment_val = user_config.iloc[0]["Comment"]
-                    if pd.notna(comment_val):
-                        config_dict["user_comments"] = str(comment_val)
+                if not user_config.empty:
+                    row = user_config.iloc[0]
+                    # Merge Tier Config
+                    if "TierConfigJSON" in row and pd.notna(row["TierConfigJSON"]) and str(row["TierConfigJSON"]).strip():
+                         try:
+                             tier_c = json.loads(str(row["TierConfigJSON"]))
+                             if tier_c:
+                                 config_dict["tier_config"] = tier_c
+                         except: pass
+                    
+                    # Merge Segment Config
+                    if "SegmentConfigJSON" in row and pd.notna(row["SegmentConfigJSON"]) and str(row["SegmentConfigJSON"]).strip():
+                         try:
+                             seg_c = json.loads(str(row["SegmentConfigJSON"]))
+                             if seg_c:
+                                 config_dict["segments"] = seg_c
+                         except: pass
+
+                    # Inject Comment
+                    if "Comment" in row and pd.notna(row["Comment"]):
+                        config_dict["user_comments"] = str(row["Comment"])
             
             return config_dict
             
@@ -332,8 +350,30 @@ def save_config(current_username=None):
                         # If all fail, default to Simul_Config for creation
                         target_worksheet = "Simul_Config"
             
-        json_str = json.dumps(config)
-        new_row = {"username": current_username, "ConfigJSON": json_str, "Comment": user_comment_text}
+        # Serialize Separate Chunks to avoid 50k char limit
+        # 1. Tiers
+        tier_data = config.get("tier_config", [])
+        tier_json = json.dumps(tier_data, separators=(',', ':')) # Minify
+        
+        # 2. Segments
+        seg_data = config.get("segments", [])
+        seg_json = json.dumps(seg_data, separators=(',', ':')) # Minify
+        
+        # 3. Main Config (Exclude heavy items to keep it light)
+        main_config = config.copy()
+        main_config.pop("tier_config", None)
+        main_config.pop("segments", None) 
+        # Keep reset_rules/streak_rules in main for now as they are small
+        
+        main_json = json.dumps(main_config, separators=(',', ':'))
+        
+        new_row = {
+            "username": current_username, 
+            "ConfigJSON": main_json, 
+            "TierConfigJSON": tier_json,
+            "SegmentConfigJSON": seg_json,
+            "Comment": user_comment_text
+        }
         
         if df.empty:
             df_to_save = pd.DataFrame([new_row])
@@ -351,10 +391,14 @@ def save_config(current_username=None):
                     
                     # Ensure columns exist before assigning
                     if "ConfigJSON" not in df.columns: df["ConfigJSON"] = ""
+                    if "TierConfigJSON" not in df.columns: df["TierConfigJSON"] = ""
+                    if "SegmentConfigJSON" not in df.columns: df["SegmentConfigJSON"] = ""
                     if "Comment" not in df.columns: df["Comment"] = ""
                     
                     # Use .loc for safety
-                    df.loc[idx, "ConfigJSON"] = json_str
+                    df.loc[idx, "ConfigJSON"] = main_json
+                    df.loc[idx, "TierConfigJSON"] = tier_json
+                    df.loc[idx, "SegmentConfigJSON"] = seg_json
                     df.loc[idx, "Comment"] = user_comment_text
                     # Drop temp column
                     df = df.drop(columns=["username_norm"])
