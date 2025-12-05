@@ -141,6 +141,7 @@ class FastSimulation:
         self.day = 0 # Track current day
         self.seg_names = [s.name for s in segment_configs]
         self.watched_indices = {} # {idx: segment_name}
+        self.match_logs = {} # {idx: [MatchLog]}
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
@@ -530,23 +531,91 @@ class FastSimulation:
         self.streak[idx_b] = s_b
         
         # 5. Process Tier Updates
-        # Identify indices for A and B in the pairs
-        # We pass the boolean outcome arrays relative to A
-        # win_a is boolean.
-        
-        # Convert simple boolean masks to indices relative to the batch?
-        # _process_tier_updates expects simple arrays.
-        # It takes idx_a, idx_b, win_a, draw, loss_a
-        # Wait, _process definition:
-        # def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
-        # And it does: res_a[win_a] = 1
-        # So win_a must be INDICES into idx_a where A won.
-        
         win_indices = np.where(win_mask)[0]
         draw_indices = np.where(draw_mask)[0]
         loss_indices = np.where(loss_mask)[0]
         
         self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
+        
+        # 6. Log Matches for Watched Users
+        # Check if any partipants are watched
+        watched_set = set(self.watched_indices.keys())
+        
+        # Optimize: Only iterate if we have watched users
+        if not watched_set:
+            return
+            
+        # Helper to log
+        def log_match(u_idx, opp_idx, res, res_type, gd, d_mmr, cur_mmr, cur_tier, cur_pts):
+            if u_idx not in watched_set: return
+            if u_idx not in self.match_logs: self.match_logs[u_idx] = []
+            
+            opp_mmr = self.mmr[opp_idx]
+            opp_ts = self.true_skill[opp_idx]
+            
+            self.match_logs[u_idx].append(MatchLog(
+                day=self.day,
+                hour=0,
+                opponent_id=int(self.ids[opp_idx]),
+                opponent_mmr=float(opp_mmr),
+                opponent_true_skill=float(opp_ts),
+                result=res,
+                result_type=res_type,
+                goal_diff=int(gd),
+                mmr_change=float(d_mmr),
+                current_mmr=float(cur_mmr),
+                current_tier_index=int(cur_tier),
+                current_ladder_points=int(cur_pts),
+                match_count=int(self.matches_played[u_idx])
+            ))
+
+        # Vectorized iteration is hard for logging distinct objects, loop over pairs? - No, too slow.
+        # Loop only over watched users who played?
+        # Find watched users in idx_a or idx_b
+        
+        # Indices in idx_a that are watched
+        # This might be slow if we do it every day for millions of users. 
+        # But 'watched_indices' is small (sample).
+        
+        # Intersect keys
+        # We need the INDEX in idx_a/idx_b to get the match details (outcome, etc)
+        
+        # Iterate through pair indices
+        for i in range(n_pairs):
+            u_a = idx_a[i]
+            u_b = idx_b[i]
+            
+            is_a_watched = u_a in watched_set
+            is_b_watched = u_b in watched_set
+            
+            if not is_a_watched and not is_b_watched:
+                continue
+                
+            # Extract Match Details
+            # Result
+            if win_mask[i]:
+                res_a, res_b = "Win", "Loss"
+            elif loss_mask[i]:
+                res_a, res_b = "Loss", "Win"
+            else:
+                res_a, res_b = "Draw", "Draw"
+                
+            res_type = "Regular"
+            
+            # Goal Diff (Simulated)
+            # Simple logic: Win=1~3, Draw=0
+            if res_a == "Draw":
+                gd = 0
+            else:
+                 # Random Goal Diff 1-3 based on margin?
+                 # Simplified: 1
+                 gd = 1
+            
+            if is_a_watched:
+                log_match(u_a, u_b, res_a, res_type, gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
+            
+            if is_b_watched:
+                log_match(u_b, u_a, res_b, res_type, gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
 
 class ELOSystem:
     def __init__(self, config: ELOConfig):
