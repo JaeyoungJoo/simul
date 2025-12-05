@@ -983,74 +983,105 @@ else:
     with st.expander("티어 기준 설정 (Tier Config)"):
             st.caption("티어별 승강등 규칙을 설정하세요. 순서는 낮은 티어부터 높은 티어 순입니다.")
             
-            # Convert to DataFrame for Editor
+            # Convert TierConfig objects to DataFrame for editing
             tier_data = []
-            for t in st.session_state.tier_config:
-                tier_data.append({
-                    "name": t.name,
-                    "type": t.type.value,
-                    "min_mmr": t.min_mmr,
-                    "max_mmr": t.max_mmr,
-                    "demotion_lives": getattr(t, "demotion_lives", 0),
-                    "points_win": getattr(t, "points_win", 0),
-                    "points_draw": getattr(t, "points_draw", 0),
-                    "promotion_points": getattr(t, "promotion_points", 100),
-                    "capacity": getattr(t, "capacity", 0),
-                    "placement_min_mmr": getattr(t, "placement_min_mmr", 0),
-                    "placement_max_mmr": getattr(t, "placement_max_mmr", 0),
-                    "promotion_points_low": getattr(t, "promotion_points_low", getattr(t, "promotion_points", 100)),
-                    "promotion_points_high": getattr(t, "promotion_points_high", getattr(t, "promotion_points", 100)),
-                    "loss_point_correction": getattr(t, "loss_point_correction", 1.0),
-                    "bot_match_enabled": getattr(t, "bot_match_enabled", False),
-                    "bot_trigger_goal_diff": getattr(t, "bot_trigger_goal_diff", 99),
-                    "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99)
-                })
+            if st.session_state.tier_config:
+                for t in st.session_state.tier_config:
+                    tier_data.append({
+                        "name": t.name,
+                        "type": t.type.value,
+                        "min_mmr": t.min_mmr,
+                        "max_mmr": t.max_mmr,
+                        "demote_mmr": t.demote_mmr,
+                        "demotion_lives": t.demotion_lives,
+                        "loss_point_correction": t.loss_point_correction,
+                        "points_win": t.points_win,
+                        "points_draw": t.points_draw,
+                        "points_loss": getattr(t, "points_loss", 0), # Add points_loss
+                        "promotion_points": t.promotion_points,
+                        "promotion_points_low": t.promotion_points_low,
+                        "promotion_points_high": t.promotion_points_high,
+                        "promotion_mmr_2": t.promotion_mmr_2,
+                        "promotion_mmr_3": t.promotion_mmr_3,
+                        "promotion_mmr_4": t.promotion_mmr_4,
+                        "promotion_mmr_5": t.promotion_mmr_5,
+                        "capacity": t.capacity,
+                        "placement_min_mmr": t.placement_min_mmr,
+                        "placement_max_mmr": t.placement_max_mmr,
+                        "bot_match_enabled": t.bot_match_enabled,
+                        "bot_trigger_goal_diff": t.bot_trigger_goal_diff,
+                        "bot_trigger_loss_streak": t.bot_trigger_loss_streak
+                    })
             
             df_tiers = pd.DataFrame(tier_data)
             
-            edited_tiers = st.data_editor(
-                df_tiers,
-                column_config={
-                    "name": st.column_config.TextColumn("티어 이름", required=True),
-                    "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio"], required=True),
-                    "min_mmr": st.column_config.NumberColumn("최소 MMR", help="MMR/Ladder 타입의 진입/강등 기준", step=0.1, format="%.1f"),
-                    "max_mmr": st.column_config.NumberColumn("최대 MMR", help="MMR 타입의 승급 기준", step=0.1, format="%.1f"),
-                    "demotion_lives": st.column_config.NumberColumn("강등 방어 (Lives)", help="강등 조건 도달 시 버틸 수 있는 패배 횟수 (0=즉시 강등)"),
-                    "points_win": st.column_config.NumberColumn("승리 승점", help="Ladder: 승리 시 획득 포인트"),
-                    "points_draw": st.column_config.NumberColumn("무승부 승점", help="Ladder: 무승부 시 획득 포인트"),
-                    "promotion_points": st.column_config.NumberColumn("승급 포인트 (Normal)", help="MMR 범위 내 승급 포인트"),
-                    "promotion_points_low": st.column_config.NumberColumn("승급 포인트 (Low)", help="MMR 범위 미만 승급 포인트"),
-                    "promotion_points_high": st.column_config.NumberColumn("승급 포인트 (High)", help="MMR 범위 초과 승급 포인트"),
-                    "capacity": st.column_config.NumberColumn("정원 (Ratio)", help="Ratio: 상위 N명 (절대값)"),
-                    "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정", step=0.1, format="%.1f"),
-                    "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", help="배치고사 완료 시 이 범위에 있으면 해당 티어 배정", step=0.1, format="%.1f"),
-                    "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", help="MMR 타입: 패배 시 포인트 차감 비율 (1.0=100%, 0.5=50% 차감)", min_value=0.0, max_value=2.0, step=0.1),
-                    "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치 사용", help="조건 만족 시 봇 매치 활성화"),
-                    "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)", help="이 점수차 이상으로 패배 시 봇 매치 발동", min_value=1, step=1),
-                    "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)", help="이 횟수만큼 연속 패배 시 봇 매치 발동", min_value=1, step=1)
-                },
-                num_rows="dynamic",
-                hide_index=True,
-                use_container_width=True,
-                key="tier_editor_new"
-            )
-            
+            # Ensure columns exist if empty
+            if df_tiers.empty:
+                df_tiers = pd.DataFrame(columns=[
+                    "name", "type", "min_mmr", "max_mmr", "demote_mmr", "demotion_lives", "loss_point_correction",
+                    "points_win", "points_draw", "points_loss", 
+                    "promotion_points", "promotion_points_low", "promotion_points_high",
+                    "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
+                    "capacity", "placement_min_mmr", "placement_max_mmr", 
+                    "bot_match_enabled", "bot_trigger_goal_diff", "bot_trigger_loss_streak"
+                ])
+
+            try:
+                edited_tiers = st.data_editor(
+                    df_tiers,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key="tier_editor",
+                    column_config={
+                        "name": st.column_config.TextColumn("티어 이름", required=True),
+                        "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio", "ELO"], required=True),
+                        "min_mmr": st.column_config.NumberColumn("최소 MMR", step=10),
+                        "max_mmr": st.column_config.NumberColumn("최대 MMR", step=10),
+                        "demote_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=10, help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
+                        "demotion_lives": st.column_config.NumberColumn("강등 방어 횟수", step=1, help="강등 위험 상태에서 패배 시 차감되는 횟수 (0=강등 없음)"),
+                        "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", step=0.1, help="패배 시 포인트 감소량 보정 (예: 0.8 = 80%만 감소)"),
+                        "points_win": st.column_config.NumberColumn("승리 포인트", step=1),
+                        "points_draw": st.column_config.NumberColumn("무승부 포인트", step=1),
+                        "points_loss": st.column_config.NumberColumn("패배 시 차감 승점", step=1, help="Ladder: 패배 시 차감되는 승점 (0점 도달 시 강등 방어 차감)"),
+                        "promotion_points": st.column_config.NumberColumn("승급 포인트", step=10),
+                        "promotion_points_low": st.column_config.NumberColumn("승급 포인트 (Low MMR)", step=10),
+                        "promotion_points_high": st.column_config.NumberColumn("승급 포인트 (High MMR)", step=10),
+                        "promotion_mmr_2": st.column_config.NumberColumn("승점 2배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 2배"),
+                        "promotion_mmr_3": st.column_config.NumberColumn("승점 3배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 3배"),
+                        "promotion_mmr_4": st.column_config.NumberColumn("승점 4배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 4배"),
+                        "promotion_mmr_5": st.column_config.NumberColumn("승점 5배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 5배"),
+                        "capacity": st.column_config.NumberColumn("정원 (Ratio)", step=1),
+                        "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=10),
+                        "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=10),
+                        "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치"),
+                        "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)"),
+                        "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)")
+                    }
+                )
+            except Exception as e:
+                st.error(f"티어 설정 표시 오류: {e}")
+                edited_tiers = pd.DataFrame()
+
             # Bulk Input for Tiers
             tier_map = {
                 "티어 이름": "name", "타입": "type", "최소 MMR": "min_mmr", "최대 MMR": "max_mmr",
-                "강등 방어 (Lives)": "demotion_lives", "승리 승점": "points_win", "무승부 승점": "points_draw",
-                "승급 포인트": "promotion_points", "정원 (Ratio)": "capacity",
-                "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
-                "승급 포인트 (Low)": "promotion_points_low", "승급 포인트 (High)": "promotion_points_high",
-                "패배 포인트 보정": "loss_point_correction",
-                "봇 매치 사용": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak",
-                # English keys just in case
+                "강등 위험 MMR": "demote_mmr", "강등 방어 횟수": "demotion_lives", "패배 포인트 보정": "loss_point_correction",
+                "승리 포인트": "points_win", "무승부 포인트": "points_draw", "승급 포인트": "promotion_points",
+                "패배 차감 승점": "points_loss",
+                "승급 포인트 (Low MMR)": "promotion_points_low", "승급 포인트 (High MMR)": "promotion_points_high",
+                "승점 2배 MMR": "promotion_mmr_2", "승점 3배 MMR": "promotion_mmr_3", 
+                "승점 4배 MMR": "promotion_mmr_4", "승점 5배 MMR": "promotion_mmr_5",
+                "정원 (Ratio)": "capacity", "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
+                "봇 매치": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak",
+                # English mappings
                 "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
-                "demotion_lives": "demotion_lives", "points_win": "points_win", "points_draw": "points_draw",
-                "promotion_points": "promotion_points", "capacity": "capacity",
-                "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
+                "demote_mmr": "demote_mmr", "demotion_lives": "demotion_lives", "loss_point_correction": "loss_point_correction",
+                "points_win": "points_win", "points_draw": "points_draw", "points_loss": "points_loss",
+                "promotion_points": "promotion_points",
                 "promotion_points_low": "promotion_points_low", "promotion_points_high": "promotion_points_high",
-                "loss_point_correction": "loss_point_correction",
+                "promotion_mmr_2": "promotion_mmr_2", "promotion_mmr_3": "promotion_mmr_3",
+                "promotion_mmr_4": "promotion_mmr_4", "promotion_mmr_5": "promotion_mmr_5",
+                "capacity": "capacity", "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
                 "bot_match_enabled": "bot_match_enabled", "bot_trigger_goal_diff": "bot_trigger_goal_diff", "bot_trigger_loss_streak": "bot_trigger_loss_streak"
             }
             new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
@@ -1061,18 +1092,24 @@ else:
                         bulk_tiers.append(safe_create_tier_config(
                             name=str(row["name"]),
                             type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
-                            min_mmr=float(row["min_mmr"]),
-                            max_mmr=float(row["max_mmr"]),
-                            demotion_lives=int(row["demotion_lives"]),
-                            points_win=int(row["points_win"]),
-                            points_draw=int(row["points_draw"]),
-                            promotion_points=int(row["promotion_points"]),
-                            capacity=int(row["capacity"]),
-                            placement_min_mmr=float(row.get("placement_min_mmr", 0.0)),
-                            placement_max_mmr=float(row.get("placement_max_mmr", 0.0)),
-                            promotion_points_low=int(row.get("promotion_points_low", row["promotion_points"])),
-                            promotion_points_high=int(row.get("promotion_points_high", row["promotion_points"])),
+                            min_mmr=float(row.get("min_mmr", 0)),
+                            max_mmr=float(row.get("max_mmr", 9999)),
+                            demote_mmr=float(row.get("demote_mmr", 0)),
+                            demotion_lives=int(row.get("demotion_lives", 0)),
                             loss_point_correction=float(row.get("loss_point_correction", 1.0)),
+                            points_win=int(row.get("points_win", 0)),
+                            points_draw=int(row.get("points_draw", 0)),
+                            points_loss=int(row.get("points_loss", 0)),
+                            promotion_points=int(row.get("promotion_points", 100)),
+                            promotion_points_low=int(row.get("promotion_points_low", 100)),
+                            promotion_points_high=int(row.get("promotion_points_high", 100)),
+                            promotion_mmr_2=float(row.get("promotion_mmr_2", 0)),
+                            promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
+                            promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
+                            promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
+                            capacity=int(row.get("capacity", 0)),
+                            placement_min_mmr=float(row.get("placement_min_mmr", 0)),
+                            placement_max_mmr=float(row.get("placement_max_mmr", 0)),
                             bot_match_enabled=bool(row.get("bot_match_enabled", False)),
                             bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
                             bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
@@ -1082,33 +1119,42 @@ else:
                 except Exception as e:
                     st.error(f"티어 CSV 적용 오류: {e}")
 
-            # Update Session State
-            new_tiers = []
-            if not edited_tiers.empty:
+            # Apply Manual Edits
+            if not edited_tiers.equals(df_tiers):
+                new_tiers = []
                 for index, row in edited_tiers.iterrows():
                     try:
-                        new_tiers.append(safe_create_tier_config(
-                            name=row["name"],
-                            type=TierType(row["type"]),
+                        t = safe_create_tier_config(
+                            name=str(row["name"]),
+                            type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]),
                             min_mmr=float(row["min_mmr"]),
                             max_mmr=float(row["max_mmr"]),
-                            demotion_lives=int(row["demotion_lives"]),
+                            demote_mmr=float(row.get("demote_mmr", 0)),
+                            demotion_lives=int(row.get("demotion_lives", 0)),
+                            loss_point_correction=float(row.get("loss_point_correction", 1.0)),
                             points_win=int(row["points_win"]),
                             points_draw=int(row["points_draw"]),
+                            points_loss=int(row.get("points_loss", 0)),
                             promotion_points=int(row["promotion_points"]),
-                            capacity=int(row["capacity"]),
-                            placement_min_mmr=float(row["placement_min_mmr"]),
-                            placement_max_mmr=float(row["placement_max_mmr"]),
                             promotion_points_low=int(row["promotion_points_low"]),
                             promotion_points_high=int(row["promotion_points_high"]),
-                            loss_point_correction=float(row["loss_point_correction"]),
+                            promotion_mmr_2=float(row.get("promotion_mmr_2", 0)),
+                            promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
+                            promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
+                            promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
+                            capacity=int(row["capacity"]),
+                            placement_min_mmr=float(row.get("placement_min_mmr", 0)),
+                            placement_max_mmr=float(row.get("placement_max_mmr", 0)),
                             bot_match_enabled=bool(row.get("bot_match_enabled", False)),
                             bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
                             bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
-                        ))
+                        )
+                        new_tiers.append(t)
                     except Exception as e:
-                        st.error(f"티어 설정 저장 중 오류: {e}")
-            st.session_state.tier_config = new_tiers
+                        # st.warning(f"티어 데이터 오류 (행 {index}): {e}")
+                        pass
+                st.session_state.tier_config = new_tiers
+
 
     with st.expander("유저 세그먼트 (티어/실력 분포)"):
             st.write("유저 세그먼트 및 특성을 정의하세요.")
