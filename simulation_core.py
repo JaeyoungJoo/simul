@@ -165,6 +165,7 @@ class FastSimulation:
             self.user_demotion_lives[:] = self.tier_configs[0].demotion_lives
         
         # True Skill & Activity (for Matchmaking simulation)
+        # True Skill & Activity (for Matchmaking simulation)
         self.true_skill = np.zeros(num_users)
         self.activity_prob = np.zeros(num_users)
         self.matches_per_day = np.zeros(num_users, dtype=int)
@@ -198,10 +199,6 @@ class FastSimulation:
             # Activity
             self.activity_prob[indices] = seg.daily_play_prob
             self.matches_per_day[indices] = np.random.randint(seg.matches_per_day_min, seg.matches_per_day_max + 1, len(indices))
-            
-            # Use True Skill for Initial MMR if requested
-            if self.use_true_skill_init:
-                self.mmr[indices] = self.true_skill[indices]
             
             # Use True Skill for Initial MMR if requested
             if self.use_true_skill_init:
@@ -398,26 +395,90 @@ class FastSimulation:
              self.day += 1
               
         # 1. Identify daily active users
-        # For efficiency, we can simulate one match per active user pair
-        # Or multiple if matches_per_day > 1. For FastSim, let's assume 1 match per active "session"
-        # Determine who plays today
-        active_mask = np.random.random(self.num_users) < self.activity_prob
-        active_indices = self.ids[active_mask]
+        # Users have 'matches_per_day' property (int)
+        # We want to simulate that many matches for each user if they are active.
+        # But efficiently.
+        
+        # Determine who is active today
+        is_active_today = np.random.random(self.num_users) < self.activity_prob
+        active_indices = self.ids[is_active_today]
         
         if len(active_indices) < 2:
             return
             
-        # 2. Matchmaking (Vectorized Jittered Sort)
-        jitter = np.random.normal(0, self.match_config.matchmaking_jitter, len(active_indices))
-        # Sort by MMR + Noise
-        sorted_active_idx = np.argsort(self.mmr[active_indices] + jitter)
-        sorted_indices = active_indices[sorted_active_idx]
+        # We need to simulate matches.
+        # Simple approach: Max loops?
+        # Or better: vectorized approach doesn't easily support variable matches per user in one go.
+        # We can define a "max_matches" for the day and loop that many times.
+        # In each loop, we select users who still have matches to play.
         
-        # Pair adjacent users (0-1, 2-3, ...)
-        # Truncate odd last user
-        n_pairs = len(sorted_indices) // 2
-        idx_a = sorted_indices[0 : n_pairs*2 : 2]
-        idx_b = sorted_indices[1 : n_pairs*2 : 2]
+        # For simplicity in 'FastSimulation', we can take the MEAN matches per day for the active set 
+        # or just loop a fixed number of times (e.g. 5) and mask?
+        
+        # Let's use the 'matches_per_day' array.
+        matches_left = self.matches_per_day[active_indices].copy()
+        current_active_indices = active_indices
+        
+        # Safety break
+        max_loops = 20
+        loop_cnt = 0
+        
+        while len(current_active_indices) >= 2 and loop_cnt < max_loops:
+            loop_cnt += 1
+            
+            # --- Perform One Batch of Matches ---
+            
+            # 2. Matchmaking (Vectorized Jittered Sort)
+            current_mmrs = self.mmr[current_active_indices]
+            jitter = np.random.normal(0, self.match_config.matchmaking_jitter, len(current_active_indices))
+            sorted_active_idx = np.argsort(current_mmrs + jitter)
+            sorted_indices = current_active_indices[sorted_active_idx]
+            
+            # Pair adjacent
+            n_pairs = len(sorted_indices) // 2
+            if n_pairs == 0: break
+            
+            idx_a = sorted_indices[0 : n_pairs*2 : 2]
+            idx_b = sorted_indices[1 : n_pairs*2 : 2]
+            
+            # 3. Simulate Outcomes & 4. Update MMR (call internal logic)
+            self._simulate_batch_matches(idx_a, idx_b)
+            
+            # Decrement matches left
+            # We need to map back to the 'active_indices' array or just track locally
+            # 'matches_left' corresponds to 'active_indices'
+            # We need to find which indices in 'active_indices' correspond to idx_a/idx_b
+            
+            # This mapping is getting complex for a "Fast" simulation. 
+            # Alternative: Just run N loops and pick random active users?
+            # No, we want to respect 'matches_per_day'.
+            
+            # Optimization: 
+            # matches_left was extracted from active_indices.
+            # We can update it if we track the mapping.
+            # OR: just update the global 'matches_per_day' (temp)? No.
+            
+            # Re-filter active_indices based on matches_per_day?
+            # It's expensive to search.
+            
+            # Let's simplify:
+            # We will run M rounds.
+            # In round 1, everyone active plays (matches_per_day >= 1).
+            # In round 2, only those with matches_per_day >= 2 play.
+            # ...
+            
+            # Identify users with >= loop_cnt matches
+            # 'matches_per_day' is static for the user (simulation parameter). 
+            # So we can pre-calculate masks.
+             
+            # Update 'current_active_indices' for next loop
+            # Who needs to play more?
+            # users in 'active_indices' where matches_per_day > loop_cnt
+            mask_remaining = self.matches_per_day[active_indices] > loop_cnt
+            current_active_indices = active_indices[mask_remaining]
+
+    def _simulate_batch_matches(self, idx_a, idx_b):
+        n_pairs = len(idx_a)
         
         # 3. Simulate Outcomes (Vectorized)
         mmr_a = self.mmr[idx_a]
@@ -426,28 +487,101 @@ class FastSimulation:
         # Expected Score A
         prob_a = 1.0 / (1.0 + 10.0 ** ((mmr_b - mmr_a) / 400.0))
         
-        # Random Draws for outcome
+        # Random Draws
         rand_outcomes = np.random.random(n_pairs)
         
         # Draw logic
         draw_prob = self.match_config.draw_prob
         prob_decisive = 1.0 - draw_prob
         
-        # Thresholds for A Win / Draw / Loss
-        # We distribute the decisive probability proportional to (prob_a) and (1-prob_a)
-        # So Prob(A Win) = prob_a * prob_decisive
-        # Prob(Draw) = draw_prob
-        # Prob(A Loss) = (1-prob_a) * prob_decisive
-        
-        # But ELO expected score includes draw probability usually.
-        # Simplified simulation specific:
         threshold_win = prob_a * prob_decisive
         threshold_draw = threshold_win + draw_prob
         
-        # Masks
         win_mask = rand_outcomes < threshold_win
         draw_mask = (rand_outcomes >= threshold_win) & (rand_outcomes < threshold_draw)
         loss_mask = rand_outcomes >= threshold_draw
+        
+        # 4. MMR Updates
+        # ... logic copied from original run_day ...
+        # K-Factor
+        k = self.match_config.base_k_factor
+        
+        # Placement Bonus (simplified check)
+        # Using loop is slow, assume vectors.
+        # If we want per-user K, we need vectors.
+        k_a = np.full(n_pairs, k)
+        k_b = np.full(n_pairs, k)
+        
+        # Score
+        score_a = np.zeros(n_pairs)
+        score_a[win_mask] = 1.0
+        score_a[draw_mask] = 0.5
+        
+        score_b = 1.0 - score_a
+        
+        # Delta
+        delta_a = k_a * (score_a - prob_a)
+        delta_b = k_b * (score_b - (1.0 - prob_a))
+        
+        # Apply
+        self.mmr[idx_a] += delta_a
+        self.mmr[idx_b] += delta_b
+        
+        # Stats
+        self.matches_played[idx_a] += 1
+        self.matches_played[idx_b] += 1
+        
+        self.wins[idx_a[win_mask]] += 1
+        self.losses[idx_b[win_mask]] += 1
+        self.streak[idx_a[win_mask]] = np.maximum(self.streak[idx_a[win_mask]] + 1, 1)
+        self.streak[idx_b[win_mask]] = np.minimum(self.streak[idx_b[win_mask]] - 1, -1)
+        
+        self.wins[idx_b[loss_mask]] += 1
+        self.losses[idx_a[loss_mask]] += 1
+        self.streak[idx_b[loss_mask]] = np.maximum(self.streak[idx_b[loss_mask]] + 1, 1)
+        self.streak[idx_a[loss_mask]] = np.minimum(self.streak[idx_a[loss_mask]] - 1, -1)
+        
+        self.draws[idx_a[draw_mask]] += 1
+        self.draws[idx_b[draw_mask]] += 1
+        self.streak[idx_a[draw_mask]] = 0 # Reset streak on draw? Configurable.
+        self.streak[idx_b[draw_mask]] = 0
+        
+        # 5. process tier updates
+        win_indices = np.where(win_mask)[0]
+        draw_indices = np.where(draw_mask)[0]
+        loss_indices = np.where(loss_mask)[0]
+        
+        self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
+        
+        # 6. Log Matches
+        watched_set = set(self.watched_indices.keys())
+        if not watched_set: return
+        
+        # Logging logic (condensed)
+        for i in range(n_pairs):
+            u_a, u_b = idx_a[i], idx_b[i]
+            if u_a not in watched_set and u_b not in watched_set: continue
+            
+            res_a = "Win" if win_mask[i] else ("Loss" if loss_mask[i] else "Draw")
+            res_b = "Loss" if win_mask[i] else ("Win" if loss_mask[i] else "Draw")
+            gd = 1 if res_a != "Draw" else 0
+            
+            if u_a in watched_set:
+                 if u_a not in self.match_logs: self.match_logs[u_a] = []
+                 self.match_logs[u_a].append(MatchLog(
+                    day=self.day, hour=0, opponent_id=int(self.ids[u_b]), opponent_mmr=float(self.mmr[u_b]),
+                    opponent_true_skill=float(self.true_skill[u_b]), result=res_a, result_type="Regular", goal_diff=gd,
+                    mmr_change=float(delta_a[i]), current_mmr=float(self.mmr[u_a]), current_tier_index=int(self.user_tier_index[u_a]),
+                    current_ladder_points=int(self.user_ladder_points[u_a]), match_count=int(self.matches_played[u_a])
+                 ))
+            if u_b in watched_set:
+                 if u_b not in self.match_logs: self.match_logs[u_b] = []
+                 self.match_logs[u_b].append(MatchLog(
+                    day=self.day, hour=0, opponent_id=int(self.ids[u_a]), opponent_mmr=float(self.mmr[u_a]),
+                    opponent_true_skill=float(self.true_skill[u_a]), result=res_b, result_type="Regular", goal_diff=gd,
+                    mmr_change=float(delta_b[i]), current_mmr=float(self.mmr[u_b]), current_tier_index=int(self.user_tier_index[u_b]),
+                    current_ladder_points=int(self.user_ladder_points[u_b]), match_count=int(self.matches_played[u_b])
+                 ))
         
         # Calculate Scores
         scores_a = np.zeros(n_pairs)
@@ -487,140 +621,6 @@ class FastSimulation:
         self.matches_played[idx_a] += 1
         self.matches_played[idx_b] += 1
         
-        self.wins[idx_a[win_mask]] += 1
-        self.losses[idx_b[win_mask]] += 1
-        
-        self.wins[idx_b[loss_mask]] += 1
-        self.losses[idx_a[loss_mask]] += 1
-        
-        self.draws[idx_a[draw_mask]] += 1
-        self.draws[idx_b[draw_mask]] += 1
-        
-        # Streak Updates (Simplified Vectorized)
-        # If Win: streak = streak>0 ? streak+1 : 1
-        # If Loss: streak = streak<0 ? streak-1 : -1
-        # If Draw: streak = 0
-        
-        # Get current streaks
-        s_a = self.streak[idx_a]
-        s_b = self.streak[idx_b]
-        
-        # A Wins
-        if win_mask.any():
-            w_idx = np.where(win_mask)[0]
-            # A Win
-            s_a[w_idx] = np.where(s_a[w_idx] > 0, s_a[w_idx] + 1, 1)
-            # B Loss
-            s_b[w_idx] = np.where(s_b[w_idx] < 0, s_b[w_idx] - 1, -1)
-            
-        # A Loses (B Wins)
-        if loss_mask.any():
-            l_idx = np.where(loss_mask)[0]
-            # A Loss
-            s_a[l_idx] = np.where(s_a[l_idx] < 0, s_a[l_idx] - 1, -1)
-            # B Win
-            s_b[l_idx] = np.where(s_b[l_idx] > 0, s_b[l_idx] + 1, 1)
-            
-        # Draws
-        if draw_mask.any():
-            d_idx = np.where(draw_mask)[0]
-            s_a[d_idx] = 0
-            s_b[d_idx] = 0
-            
-        self.streak[idx_a] = s_a
-        self.streak[idx_b] = s_b
-        
-        # 5. Process Tier Updates
-        win_indices = np.where(win_mask)[0]
-        draw_indices = np.where(draw_mask)[0]
-        loss_indices = np.where(loss_mask)[0]
-        
-        self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
-        
-        # 6. Log Matches for Watched Users
-        # Check if any partipants are watched
-        watched_set = set(self.watched_indices.keys())
-        
-        # Optimize: Only iterate if we have watched users
-        if not watched_set:
-            return
-            
-        # Helper to log
-        def log_match(u_idx, opp_idx, res, res_type, gd, d_mmr, cur_mmr, cur_tier, cur_pts):
-            if u_idx not in watched_set: return
-            if u_idx not in self.match_logs: self.match_logs[u_idx] = []
-            
-            opp_mmr = self.mmr[opp_idx]
-            opp_ts = self.true_skill[opp_idx]
-            
-            self.match_logs[u_idx].append(MatchLog(
-                day=self.day,
-                hour=0,
-                opponent_id=int(self.ids[opp_idx]),
-                opponent_mmr=float(opp_mmr),
-                opponent_true_skill=float(opp_ts),
-                result=res,
-                result_type=res_type,
-                goal_diff=int(gd),
-                mmr_change=float(d_mmr),
-                current_mmr=float(cur_mmr),
-                current_tier_index=int(cur_tier),
-                current_ladder_points=int(cur_pts),
-                match_count=int(self.matches_played[u_idx])
-            ))
-
-        # Vectorized iteration is hard for logging distinct objects, loop over pairs? - No, too slow.
-        # Loop only over watched users who played?
-        # Find watched users in idx_a or idx_b
-        
-        # Indices in idx_a that are watched
-        # This might be slow if we do it every day for millions of users. 
-        # But 'watched_indices' is small (sample).
-        
-        # Intersect keys
-        # We need the INDEX in idx_a/idx_b to get the match details (outcome, etc)
-        
-        # Iterate through pair indices
-        for i in range(n_pairs):
-            u_a = idx_a[i]
-            u_b = idx_b[i]
-            
-            is_a_watched = u_a in watched_set
-            is_b_watched = u_b in watched_set
-            
-            if not is_a_watched and not is_b_watched:
-                continue
-                
-            # Extract Match Details
-            # Result
-            if win_mask[i]:
-                res_a, res_b = "Win", "Loss"
-            elif loss_mask[i]:
-                res_a, res_b = "Loss", "Win"
-            else:
-                res_a, res_b = "Draw", "Draw"
-                
-            res_type = "Regular"
-            
-            # Goal Diff (Simulated)
-            # Simple logic: Win=1~3, Draw=0
-            if res_a == "Draw":
-                gd = 0
-            else:
-                 # Random Goal Diff 1-3 based on margin?
-                 # Simplified: 1
-                 gd = 1
-            
-            if is_a_watched:
-                log_match(u_a, u_b, res_a, res_type, gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
-            
-            if is_b_watched:
-                log_match(u_b, u_a, res_b, res_type, gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
-
-class ELOSystem:
-    def __init__(self, config: ELOConfig):
-        self.config = config
-
     def expected_score(self, rating_a: float, rating_b: float) -> float:
         return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
 
