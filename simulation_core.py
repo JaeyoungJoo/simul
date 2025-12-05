@@ -139,6 +139,7 @@ class FastSimulation:
         self.use_true_skill_init = use_true_skill_init
         self.reset_rules = reset_rules if reset_rules else []
         self.day = 0 # Track current day
+        self.seg_names = [s.name for s in segment_configs]
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
