@@ -143,6 +143,7 @@ class FastSimulation:
         
         # User State Arrays (Vectorized)
         self.ids = np.arange(num_users)
+        self.segment_indices = np.zeros(num_users, dtype=int)
         self.mmr = np.full(num_users, float(initial_mmr))
         self.matches_played = np.zeros(num_users, dtype=int)
         self.wins = np.zeros(num_users, dtype=int)
@@ -177,11 +178,12 @@ class FastSimulation:
 
     def _initialize_users(self):
         start_idx = 0
-        for seg in self.segment_configs:
+        for i, seg in enumerate(self.segment_configs):
             count = int(self.num_users * seg.ratio)
             if count == 0: continue
             end_idx = min(start_idx + count, self.num_users)
             indices = np.arange(start_idx, end_idx)
+            self.segment_indices[indices] = i
             
             # True Skill
             self.true_skill[indices] = np.random.normal(
