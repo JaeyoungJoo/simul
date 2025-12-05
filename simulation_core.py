@@ -376,8 +376,161 @@ class FastSimulation:
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
-    def run_day(self, day):
-        pass # Placeholder for compatibility if needed
+    def run_day(self, day=None):
+        if day is None:
+            day = 0 # Default if not provided
+            
+        # 1. Identify daily active users
+        # For efficiency, we can simulate one match per active user pair
+        # Or multiple if matches_per_day > 1. For FastSim, let's assume 1 match per active "session"
+        # Determine who plays today
+        active_mask = np.random.random(self.num_users) < self.activity_prob
+        active_indices = self.ids[active_mask]
+        
+        if len(active_indices) < 2:
+            return
+            
+        # 2. Matchmaking (Vectorized Jittered Sort)
+        jitter = np.random.normal(0, self.match_config.matchmaking_jitter, len(active_indices))
+        # Sort by MMR + Noise
+        sorted_active_idx = np.argsort(self.mmr[active_indices] + jitter)
+        sorted_indices = active_indices[sorted_active_idx]
+        
+        # Pair adjacent users (0-1, 2-3, ...)
+        # Truncate odd last user
+        n_pairs = len(sorted_indices) // 2
+        idx_a = sorted_indices[0 : n_pairs*2 : 2]
+        idx_b = sorted_indices[1 : n_pairs*2 : 2]
+        
+        # 3. Simulate Outcomes (Vectorized)
+        mmr_a = self.mmr[idx_a]
+        mmr_b = self.mmr[idx_b]
+        
+        # Expected Score A
+        prob_a = 1.0 / (1.0 + 10.0 ** ((mmr_b - mmr_a) / 400.0))
+        
+        # Random Draws for outcome
+        rand_outcomes = np.random.random(n_pairs)
+        
+        # Draw logic
+        draw_prob = self.match_config.draw_prob
+        prob_decisive = 1.0 - draw_prob
+        
+        # Thresholds for A Win / Draw / Loss
+        # We distribute the decisive probability proportional to (prob_a) and (1-prob_a)
+        # So Prob(A Win) = prob_a * prob_decisive
+        # Prob(Draw) = draw_prob
+        # Prob(A Loss) = (1-prob_a) * prob_decisive
+        
+        # But ELO expected score includes draw probability usually.
+        # Simplified simulation specific:
+        threshold_win = prob_a * prob_decisive
+        threshold_draw = threshold_win + draw_prob
+        
+        # Masks
+        win_mask = rand_outcomes < threshold_win
+        draw_mask = (rand_outcomes >= threshold_win) & (rand_outcomes < threshold_draw)
+        loss_mask = rand_outcomes >= threshold_draw
+        
+        # Calculate Scores
+        scores_a = np.zeros(n_pairs)
+        scores_a[win_mask] = 1.0
+        scores_a[draw_mask] = 0.5
+        scores_a[loss_mask] = 0.0
+        
+        scores_b = 1.0 - scores_a
+        
+        # 4. MMR Updates (Simple K-Factor)
+        # FastSimulation uses simplified K (base + maybe streak bonus average?)
+        # For full fidelity we'd iterate streaks, but for Speed we use Base K or simplified.
+        # Let's use Base K * Placement Bonus if applicable (checking matches_played)
+        
+        k_a = np.full(n_pairs, self.elo_config.base_k, dtype=float)
+        k_b = np.full(n_pairs, self.elo_config.base_k, dtype=float)
+        
+        mps_a = self.matches_played[idx_a]
+        mps_b = self.matches_played[idx_b]
+        
+        # Placement Bonus
+        place_mask_a = mps_a < self.elo_config.placement_matches
+        k_a[place_mask_a] *= self.elo_config.placement_bonus
+        
+        place_mask_b = mps_b < self.elo_config.placement_matches
+        k_b[place_mask_b] *= self.elo_config.placement_bonus
+        
+        # Calc Delta
+        delta_a = k_a * (scores_a - prob_a)
+        delta_b = k_b * (scores_b - (1.0 - prob_a))
+        
+        # Update MMR
+        self.mmr[idx_a] += delta_a
+        self.mmr[idx_b] += delta_b
+        
+        # Update Stats
+        self.matches_played[idx_a] += 1
+        self.matches_played[idx_b] += 1
+        
+        self.wins[idx_a[win_mask]] += 1
+        self.losses[idx_b[win_mask]] += 1
+        
+        self.wins[idx_b[loss_mask]] += 1
+        self.losses[idx_a[loss_mask]] += 1
+        
+        self.draws[idx_a[draw_mask]] += 1
+        self.draws[idx_b[draw_mask]] += 1
+        
+        # Streak Updates (Simplified Vectorized)
+        # If Win: streak = streak>0 ? streak+1 : 1
+        # If Loss: streak = streak<0 ? streak-1 : -1
+        # If Draw: streak = 0
+        
+        # Get current streaks
+        s_a = self.streak[idx_a]
+        s_b = self.streak[idx_b]
+        
+        # A Wins
+        if win_mask.any():
+            w_idx = np.where(win_mask)[0]
+            # A Win
+            s_a[w_idx] = np.where(s_a[w_idx] > 0, s_a[w_idx] + 1, 1)
+            # B Loss
+            s_b[w_idx] = np.where(s_b[w_idx] < 0, s_b[w_idx] - 1, -1)
+            
+        # A Loses (B Wins)
+        if loss_mask.any():
+            l_idx = np.where(loss_mask)[0]
+            # A Loss
+            s_a[l_idx] = np.where(s_a[l_idx] < 0, s_a[l_idx] - 1, -1)
+            # B Win
+            s_b[l_idx] = np.where(s_b[l_idx] > 0, s_b[l_idx] + 1, 1)
+            
+        # Draws
+        if draw_mask.any():
+            d_idx = np.where(draw_mask)[0]
+            s_a[d_idx] = 0
+            s_b[d_idx] = 0
+            
+        self.streak[idx_a] = s_a
+        self.streak[idx_b] = s_b
+        
+        # 5. Process Tier Updates
+        # Identify indices for A and B in the pairs
+        # We pass the boolean outcome arrays relative to A
+        # win_a is boolean.
+        
+        # Convert simple boolean masks to indices relative to the batch?
+        # _process_tier_updates expects simple arrays.
+        # It takes idx_a, idx_b, win_a, draw, loss_a
+        # Wait, _process definition:
+        # def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
+        # And it does: res_a[win_a] = 1
+        # So win_a must be INDICES into idx_a where A won.
+        
+        win_indices = np.where(win_mask)[0]
+        draw_indices = np.where(draw_mask)[0]
+        loss_indices = np.where(loss_mask)[0]
+        
+        self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
 
 class ELOSystem:
     def __init__(self, config: ELOConfig):
