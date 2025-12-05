@@ -170,6 +170,9 @@ class FastSimulation:
         
         self._initialize_users()
 
+    def initialize_users(self):
+        self._initialize_users()
+
     def _initialize_users(self):
         start_idx = 0
         for seg in self.segment_configs:
