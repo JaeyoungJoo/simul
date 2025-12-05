@@ -202,6 +202,23 @@ class FastSimulation:
             # Use True Skill for Initial MMR if requested
             if self.use_true_skill_init:
                 self.mmr[indices] = self.true_skill[indices]
+                
+                # Apply Season Reset Logic (Compression) immediately
+                if self.reset_rules:
+                    temp_mmr = self.mmr[indices].copy()
+                    for rule in self.reset_rules:
+                         # Handle keys (app.py uses min_mmr/max_mmr/reset_mmr/soft_reset_ratio)
+                         r_min = rule.get('min_mmr', rule.get('min', 0))
+                         r_max = rule.get('max_mmr', rule.get('max', 99999))
+                         target = rule.get('reset_mmr', rule.get('target', 1000))
+                         comp = rule.get('soft_reset_ratio', rule.get('compression', 1.0))
+                         
+                         mask = (temp_mmr >= r_min) & (temp_mmr < r_max)
+                         if mask.any():
+                             # New = Target + (Old - Target) * Ratio
+                             # Note: "soft_reset_ratio" usually means % retained. 
+                             # 1.0 = No Change. 0.0 = Hard Reset to Target.
+                             self.mmr[indices[mask]] = target + (temp_mmr[mask] - target) * comp
             
             # Watch a few users from each segment for logs
             # Watch a few users from each segment for logs
@@ -224,6 +241,64 @@ class FastSimulation:
             self.user_tier_index[i] = assigned_idx
             self.user_ladder_points[i] = 0 # Reset points
             self.user_demotion_lives[i] = self.tier_configs[assigned_idx].demotion_lives
+
+    def apply_tiered_reset(self, rules: List[Dict]):
+        # rules: [{'min_mmr': 0, 'max_mmr': 1000, 'reset_mmr': 800, 'soft_reset_ratio': 0.5}, ...]
+        watched_set = set(self.watched_indices.keys())
+        
+        for rule in rules:
+             # Handle keys (schema compatibility)
+             r_min = rule.get('min_mmr', rule.get('min', 0))
+             r_max = rule.get('max_mmr', rule.get('max', 99999))
+             target = rule.get('reset_mmr', rule.get('target', 1000))
+             comp = rule.get('soft_reset_ratio', rule.get('compression', 1.0))
+             
+             mask = (self.mmr >= r_min) & (self.mmr < r_max)
+             if not mask.any(): continue
+             
+             # Calculate new MMRs
+             old_mmrs = self.mmr[mask].copy()
+             new_mmrs = target + (old_mmrs - target) * comp
+             
+             self.mmr[mask] = new_mmrs
+             
+             # Log changes for watched users
+             mask_indices = np.where(mask)[0]
+             for idx in mask_indices:
+                 if idx in watched_set:
+                     if idx not in self.match_logs: self.match_logs[idx] = []
+                     
+                     match_idx_in_mask = np.where(mask_indices == idx)[0][0]
+                     d_mmr = new_mmrs[match_idx_in_mask] - old_mmrs[match_idx_in_mask]
+                     
+                     self.match_logs[idx].append(MatchLog(
+                        day=self.day,
+                        hour=0,
+                        opponent_id=-1, # System Reset
+                        opponent_mmr=0,
+                        opponent_true_skill=0,
+                        result="Reset",
+                        result_type="Season",
+                        goal_diff=0,
+                        mmr_change=float(d_mmr),
+                        current_mmr=float(self.mmr[idx]),
+                        current_tier_index=int(self.user_tier_index[idx]),
+                        current_ladder_points=0,
+                        match_count=int(self.matches_played[idx])
+                    ))
+        
+        # Reset Stats (Vectorized)
+        self.matches_played[:] = 0
+        self.wins[:] = 0
+        self.losses[:] = 0
+        self.draws[:] = 0
+        self.streak[:] = 0
+        self.user_ladder_points[:] = 0
+        # Reset lives to default based on current tier
+        for t_idx, t_config in enumerate(self.tier_configs):
+             tier_mask = self.user_tier_index == t_idx
+             if tier_mask.any():
+                 self.user_demotion_lives[tier_mask] = t_config.demotion_lives
 
     def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
         # print("DEBUG: _process_tier_updates CALLED")
