@@ -173,6 +173,10 @@ class FastSimulation:
         self.promotion_counts = {} # tier_idx -> count
         self.demotion_counts = {}
         
+        # Tracking First 3 Matches (for Analysis)
+        # N x 3 array. -9 = Unplayed, 1 = Win, 0 = Draw, -1 = Loss
+        self.first_3_outcomes = np.full((num_users, 3), -9, dtype=int)
+        
         self._initialize_users()
 
     def initialize_users(self):
@@ -618,8 +622,47 @@ class FastSimulation:
         
         self.draws[idx_a[draw_mask]] += 1
         self.draws[idx_b[draw_mask]] += 1
-        self.streak[idx_a[draw_mask]] = 0 # Reset streak on draw? Configurable.
+        self.streak[idx_a[draw_mask]] = 0 # Reset streak on draw
         self.streak[idx_b[draw_mask]] = 0
+        
+        # --- Track First 3 Outcomes (Analysis) ---
+        # Current match count is already incremented (so 1, 2, 3...)
+        # Indices where tracked match count <= 3
+        # Match count 1 -> index 0, 2->1, 3->2
+        
+        # Helper for batch update
+        def update_first_3(indices, results, counts):
+            # Mask for users within first 3 matches
+            mask_valid = counts <= 3
+            if not mask_valid.any(): return
+            
+            valid_idx = indices[mask_valid]
+            valid_res = results[mask_valid] # 1, 0, -1
+            valid_counts = counts[mask_valid] 
+            
+            # Map count 1-3 to index 0-2
+            slot_idx = valid_counts - 1
+            
+            # Numpy fancy indexing: data[rows, cols] = values
+            self.first_3_outcomes[valid_idx, slot_idx] = valid_res
+
+        # Prepare outcomes (-1: Loss, 0: Draw, 1: Win)
+        # res_a/res_b were strings or derived. Let's use score_a/score_b but we need -1 for loss.
+        # score: 1.0 (Win), 0.5 (Draw), 0.0 (Loss)
+        # Map to 1, 0, -1
+        
+        int_res_a = np.zeros(n_pairs, dtype=int)
+        int_res_a[win_mask] = 1
+        int_res_a[draw_mask] = 0
+        int_res_a[loss_mask] = -1
+        
+        int_res_b = np.zeros(n_pairs, dtype=int)
+        int_res_b[loss_mask] = 1 # B wins when A loses
+        int_res_b[draw_mask] = 0
+        int_res_b[win_mask] = -1 # B loses when A wins
+        
+        update_first_3(idx_a, int_res_a, self.matches_played[idx_a])
+        update_first_3(idx_b, int_res_b, self.matches_played[idx_b])
         
         # 5. process tier updates
         win_indices = np.where(win_mask)[0]
