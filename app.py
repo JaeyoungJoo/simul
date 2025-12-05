@@ -992,7 +992,7 @@ else:
                         "type": t.type.value,
                         "min_mmr": t.min_mmr,
                         "max_mmr": t.max_mmr,
-                        "demote_mmr": t.demote_mmr,
+                        "demotion_mmr": getattr(t, "demotion_mmr", 0.0),
                         "demotion_lives": t.demotion_lives,
                         "loss_point_correction": t.loss_point_correction,
                         "points_win": t.points_win,
@@ -1018,7 +1018,7 @@ else:
             # Ensure columns exist if empty
             if df_tiers.empty:
                 df_tiers = pd.DataFrame(columns=[
-                    "name", "type", "min_mmr", "max_mmr", "demote_mmr", "demotion_lives", "loss_point_correction",
+                    "name", "type", "min_mmr", "max_mmr", "demotion_mmr", "demotion_lives", "loss_point_correction",
                     "points_win", "points_draw", "points_loss", 
                     "promotion_points", "promotion_points_low", "promotion_points_high",
                     "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
@@ -1037,7 +1037,7 @@ else:
                         "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio", "ELO"], required=True),
                         "min_mmr": st.column_config.NumberColumn("최소 MMR", step=10),
                         "max_mmr": st.column_config.NumberColumn("최대 MMR", step=10),
-                        "demote_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=10, help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
+                        "demotion_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=10, help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
                         "demotion_lives": st.column_config.NumberColumn("강등 방어 횟수", step=1, help="강등 위험 상태에서 패배 시 차감되는 횟수 (0=강등 없음)"),
                         "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", step=0.1, help="패배 시 포인트 감소량 보정 (예: 0.8 = 80%만 감소)"),
                         "points_win": st.column_config.NumberColumn("승리 포인트", step=1),
@@ -1065,7 +1065,7 @@ else:
             # Bulk Input for Tiers
             tier_map = {
                 "티어 이름": "name", "타입": "type", "최소 MMR": "min_mmr", "최대 MMR": "max_mmr",
-                "강등 위험 MMR": "demote_mmr", "강등 방어 횟수": "demotion_lives", "패배 포인트 보정": "loss_point_correction",
+                "강등 위험 MMR": "demotion_mmr", "강등 방어 횟수": "demotion_lives", "패배 포인트 보정": "loss_point_correction",
                 "승리 포인트": "points_win", "무승부 포인트": "points_draw", "승급 포인트": "promotion_points",
                 "패배 차감 승점": "points_loss",
                 "승급 포인트 (Low MMR)": "promotion_points_low", "승급 포인트 (High MMR)": "promotion_points_high",
@@ -1075,7 +1075,7 @@ else:
                 "봇 매치": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak",
                 # English mappings
                 "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
-                "demote_mmr": "demote_mmr", "demotion_lives": "demotion_lives", "loss_point_correction": "loss_point_correction",
+                "demotion_mmr": "demotion_mmr", "demotion_lives": "demotion_lives", "loss_point_correction": "loss_point_correction",
                 "points_win": "points_win", "points_draw": "points_draw", "points_loss": "points_loss",
                 "promotion_points": "promotion_points",
                 "promotion_points_low": "promotion_points_low", "promotion_points_high": "promotion_points_high",
@@ -1094,7 +1094,7 @@ else:
                             type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
                             min_mmr=float(row.get("min_mmr", 0)),
                             max_mmr=float(row.get("max_mmr", 9999)),
-                            demote_mmr=float(row.get("demote_mmr", 0)),
+                            demotion_mmr=float(row.get("demotion_mmr", 0)),
                             demotion_lives=int(row.get("demotion_lives", 0)),
                             loss_point_correction=float(row.get("loss_point_correction", 1.0)),
                             points_win=int(row.get("points_win", 0)),
@@ -1129,7 +1129,7 @@ else:
                             type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]),
                             min_mmr=float(row["min_mmr"]),
                             max_mmr=float(row["max_mmr"]),
-                            demote_mmr=float(row.get("demote_mmr", 0)),
+                            demotion_mmr=float(row.get("demotion_mmr", 0)),
                             demotion_lives=int(row.get("demotion_lives", 0)),
                             loss_point_correction=float(row.get("loss_point_correction", 1.0)),
                             points_win=int(row["points_win"]),
