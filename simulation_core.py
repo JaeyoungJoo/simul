@@ -167,7 +167,7 @@ class FastSimulation:
         # True Skill & Activity (for Matchmaking simulation)
         self.true_skill = np.zeros(num_users)
         self.activity_prob = np.zeros(num_users)
-        self.matches_per_day = np.zeros(num_users, dtype=int)
+        self.matches_per_day = np.zeros(num_users, dtype=float)
         
         # Stats
         self.promotion_counts = {} # tier_idx -> count
@@ -201,7 +201,8 @@ class FastSimulation:
             
             # Activity
             self.activity_prob[indices] = seg.daily_play_prob
-            self.matches_per_day[indices] = np.random.randint(seg.matches_per_day_min, seg.matches_per_day_max + 1, len(indices))
+            # Use uniform for float range support (e.g. 3.0 to 12.0)
+            self.matches_per_day[indices] = np.random.uniform(seg.matches_per_day_min, seg.matches_per_day_max, len(indices))
             
             # Use True Skill for Initial MMR if requested
             if self.use_true_skill_init:
@@ -486,17 +487,23 @@ class FastSimulation:
             return
             
         # We need to simulate matches.
-        # Simple approach: Max loops?
-        # Or better: vectorized approach doesn't easily support variable matches per user in one go.
-        # We can define a "max_matches" for the day and loop that many times.
-        # In each loop, we select users who still have matches to play.
+        # matches_per_day is now float.
+        # Calculate daily_matches for active users using probabilistic rounding.
         
-        # For simplicity in 'FastSimulation', we can take the MEAN matches per day for the active set 
-        # or just loop a fixed number of times (e.g. 5) and mask?
+        user_matches = self.matches_per_day[active_indices]
+        base_matches = np.floor(user_matches).astype(int)
+        remainder = user_matches - base_matches
+        extra_matches = (np.random.random(len(active_indices)) < remainder).astype(int)
         
-        # Let's use the 'matches_per_day' array.
-        matches_left = self.matches_per_day[active_indices].copy()
-        current_active_indices = active_indices
+        daily_matches = base_matches + extra_matches
+        
+        # Filter out users with 0 matches (if any, though min is usually > 0)
+        has_matches = daily_matches > 0
+        if not has_matches.any(): return
+        
+        active_indices = active_indices[has_matches]
+        matches_left = daily_matches[has_matches]
+        current_active_indices = active_indices.copy()
         
         # Safety break
         max_loops = 20
@@ -547,24 +554,56 @@ class FastSimulation:
             # ...
             
             # Identify users with >= loop_cnt matches
-            # 'matches_per_day' is static for the user (simulation parameter). 
-            # So we can pre-calculate masks.
-             
-            # Update 'current_active_indices' for next loop
-            # Who needs to play more?
-            # users in 'active_indices' where matches_per_day > loop_cnt
-            mask_remaining = self.matches_per_day[active_indices] > loop_cnt
-            current_active_indices = active_indices[mask_remaining]
-
+            # We are using 'matches_left' which we must decrement.
+            # But wait, self._simulate_batch_matches doesn't return who played.
+            # We know idx_a and idx_b played.
+            
+            # We need to map global indices back to local 'matches_left' indices.
+            # This is complex in vectorized form.
+            
+            # Simpler approach for this loop:
+            # global 'matches_per_day' is static average. 'daily_matches' is local instance.
+            # We have 'matches_left' aligned with 'active_indices'.
+            
+            # Let's verify if _simulate_batch_matches modifies anything we need.
+            # It modifies MMR/Stats.
+            
+            # Update matches_left for those who played? 
+            # Actually, standard approach:
+            # In Loop N:
+            # Play everyone who has N matches or more. 
+            # Since everyone in 'current_active_indices' has at least 1 match left (filtered at end of loop),
+            # we just pair them up.
+            
+            # But probabilistic rounding means some have 3, some have 4.
+            # Loop 1: Everyone plays (if >=1).
+            # Loop 2: Only those with >=2 play.
+            # ...
+            
+            # So we just need to filter 'current_active_indices' based on 'daily_matches' > loop_cnt.
+            # 'daily_matches' corresponds to 'active_indices' (original set).
+            
+            mask_still_playing = daily_matches > loop_cnt
+            current_active_indices = active_indices[mask_still_playing]
+            # No need to update matches_left explicitely if we use the mask against the fixed 'daily_matches' array.
+            
     def _simulate_batch_matches(self, idx_a, idx_b):
         n_pairs = len(idx_a)
         
         # 3. Simulate Outcomes (Vectorized)
+        # Use True Skill for Win Probability (Real Skill)
+        ts_a = self.true_skill[idx_a]
+        ts_b = self.true_skill[idx_b]
+        
+        # Use MMR for Expected Score (Elo Delta)
         mmr_a = self.mmr[idx_a]
         mmr_b = self.mmr[idx_b]
         
-        # Expected Score A
-        prob_a = 1.0 / (1.0 + 10.0 ** ((mmr_b - mmr_a) / 400.0))
+        # Real Win Probability (True Skill)
+        prob_real_a = 1.0 / (1.0 + 10.0 ** ((ts_b - ts_a) / 400.0))
+        
+        # Expected Win Probability (MMR) - for Score Calculation
+        prob_mmr_a = 1.0 / (1.0 + 10.0 ** ((mmr_b - mmr_a) / 400.0))
         
         # Random Draws
         rand_outcomes = np.random.random(n_pairs)
@@ -573,7 +612,7 @@ class FastSimulation:
         draw_prob = self.match_config.draw_prob
         prob_decisive = 1.0 - draw_prob
         
-        threshold_win = prob_a * prob_decisive
+        threshold_win = prob_real_a * prob_decisive
         threshold_draw = threshold_win + draw_prob
         
         win_mask = rand_outcomes < threshold_win
@@ -599,8 +638,13 @@ class FastSimulation:
         score_b = 1.0 - score_a
         
         # Delta
-        delta_a = k_a * (score_a - prob_a)
-        delta_b = k_b * (score_b - (1.0 - prob_a))
+        # NOTE: We use prob_mmr_a (Expected based on MMR) to calculate delta against Actual Result.
+        # This is key: If High Skill (Low MMR) beats Low Skill (High MMR),
+        # prob_real was high (so they won), but prob_mmr was low (underdog).
+        # So they gain MORE points. This accelerates convergence to True Skill.
+        
+        delta_a = k_a * (score_a - prob_mmr_a)
+        delta_b = k_b * (score_b - (1.0 - prob_mmr_a))
         
         # Zero-Sum Check (Debug)
         # total_delta = np.sum(delta_a + delta_b)
