@@ -1501,13 +1501,39 @@ else:
                 sim = st.session_state.simulation
                 
                 if sim.tier_configs:
-                    # Use tracked tier indices
+                    # Use tracked tier indices but separate Unranked (Placement)
                     tier_counts = {}
-                    for i, config in enumerate(sim.tier_configs):
-                        count = np.sum(sim.user_tier_index == i)
-                        tier_counts[config.name] = count
                     
-                    tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
+                    # Logic:
+                    # 1. Identify Unranked Users (matches < placement_matches)
+                    # 2. Count them as "Unranked"
+                    # 3. Exclude them from regular tier counts
+                    
+                    pm = sim.elo_config.placement_matches
+                    is_unranked = sim.matches_played < pm
+                    unranked_count = np.sum(is_unranked)
+                    
+                    # Initialize regular tiers
+                    tier_names = [config.name for config in sim.tier_configs]
+                    for name in tier_names:
+                        tier_counts[name] = 0
+                        
+                    # Calculate counts for ranked users only
+                    # We iterate tiers and sum (tier_index == i AND NOT unranked)
+                    for i, name in enumerate(tier_names):
+                        count = np.sum((sim.user_tier_index == i) & (~is_unranked))
+                        tier_counts[name] = count
+                        
+                    # Add Unranked at the beginning or specific key
+                    # To render it first, we might need a list
+                    final_data = []
+                    if unranked_count > 0:
+                        final_data.append({"Tier": "Unranked (배치)", "Count": unranked_count})
+                        
+                    for name in tier_names:
+                        final_data.append({"Tier": name, "Count": tier_counts[name]})
+                    
+                    tier_df = pd.DataFrame(final_data)
                     fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수 (현재)")
                     st.plotly_chart(fig_tier, use_container_width=True)
                 else:
