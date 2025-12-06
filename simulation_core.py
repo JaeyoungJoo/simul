@@ -327,9 +327,12 @@ class FastSimulation:
         self._update_single_batch(idx_b, results_b, self.mmr[idx_b])
 
     def _update_single_batch(self, indices, results, current_mmrs):
+        # Snapshot current stats to prevent "Ladder Cascading" (promoting multiple times in one loop)
+        current_tier_snapshot = self.user_tier_index[indices].copy()
+        
         for t_idx, config in enumerate(self.tier_configs):
-            # Identify users in this tier
-            in_tier_mask = self.user_tier_index[indices] == t_idx
+            # Identify users in this tier (using snapshot)
+            in_tier_mask = current_tier_snapshot == t_idx
             if not in_tier_mask.any():
                 continue
             
