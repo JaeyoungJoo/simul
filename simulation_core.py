@@ -624,8 +624,15 @@ class FastSimulation:
         # K-Factor
         # K-Factor Base
         k = float(self.elo_config.base_k)
-        k_a = np.full(n_pairs, k, dtype=float)
-        k_b = np.full(n_pairs, k, dtype=float)
+        # Use np.float64 explicitly to avoid ambiguity and ensure float casting
+        k_a = np.full(n_pairs, k, dtype=np.float64)
+        k_b = np.full(n_pairs, k, dtype=np.float64)
+        
+        # Defensive: Ensure float
+        k_a = k_a.astype(np.float64)
+        k_b = k_b.astype(np.float64)
+        
+        print(f"DEBUG: Batch Match K-Factor Check - Type: {k_a.dtype}, Sample: {k_a[0] if n_pairs>0 else 'N/A'}")
         
         # 4a. Placement Matches Logic
         # Users in placement get higher K via Bonus Multiplier
