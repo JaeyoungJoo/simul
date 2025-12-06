@@ -234,18 +234,42 @@ class FastSimulation:
             start_idx = end_idx
 
     def _assign_placement_tier(self, user_indices):
-        # Assign tier based on MMR after placement
-        for i in user_indices:
+        # Sort by MMR Descending (Priority)
+        sorted_indices = sorted(user_indices, key=lambda i: self.mmr[i], reverse=True)
+        
+        # Pre-calculate counts (optimization)
+        current_counts = {}
+        for idx, t in enumerate(self.tier_configs):
+            if t.type == TierType.RATIO:
+                current_counts[idx] = np.count_nonzero(self.user_tier_index == idx)
+
+        for i in sorted_indices:
             u_mmr = self.mmr[i]
             assigned_idx = 0
+            
             # Find highest matching placement tier
             for idx, t in enumerate(self.tier_configs):
                 if t.placement_min_mmr <= u_mmr <= t.placement_max_mmr:
                     assigned_idx = idx
             
+            # Capacity Check (Downgrade if full)
+            while assigned_idx > 0:
+                t = self.tier_configs[assigned_idx]
+                if t.type == TierType.RATIO:
+                    cur_cnt = current_counts.get(assigned_idx, 0)
+                    if cur_cnt >= t.capacity:
+                        assigned_idx -= 1
+                        continue
+                break
+            
+            # Update State
             self.user_tier_index[i] = assigned_idx
-            self.user_ladder_points[i] = 0 # Reset points
+            self.user_ladder_points[i] = 0 
             self.user_demotion_lives[i] = self.tier_configs[assigned_idx].demotion_lives
+            
+            # Update temp count
+            if self.tier_configs[assigned_idx].type == TierType.RATIO:
+                current_counts[assigned_idx] = current_counts.get(assigned_idx, 0) + 1
 
     def apply_tiered_reset(self, rules: List[Dict]):
         # rules: [{'min_mmr': 0, 'max_mmr': 1000, 'reset_mmr': 800, 'soft_reset_ratio': 0.5}, ...]
@@ -412,7 +436,24 @@ class FastSimulation:
                 
                 prom_mask = self.user_ladder_points[subset_indices] >= target_points
                 if prom_mask.any():
-                    prom_indices = subset_indices[prom_mask]
+                    candidates = subset_indices[prom_mask]
+                    prom_indices = candidates
+                    
+                    # Capacity Check for Ladder/MMR -> Ratio
+                    if t_idx < len(self.tier_configs) - 1:
+                        next_tier = self.tier_configs[t_idx+1]
+                        if next_tier.type == TierType.RATIO:
+                            next_tier_users = np.where(self.user_tier_index == t_idx + 1)[0]
+                            remaining = next_tier.capacity - len(next_tier_users)
+                            
+                            if remaining > 0:
+                                # Sort by MMR descending for fairness
+                                cand_mmrs = self.mmr[candidates]
+                                sorted_idx = np.argsort(cand_mmrs)[::-1]
+                                can_promote_count = min(len(candidates), remaining)
+                                prom_indices = candidates[sorted_idx][:can_promote_count]
+                            else:
+                                prom_indices = []
             
             # Execute Promotion
             if len(prom_indices) > 0 and t_idx < len(self.tier_configs) - 1:
