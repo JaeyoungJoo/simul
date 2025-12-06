@@ -903,9 +903,7 @@ else:
             
             st.subheader("배치고사")
             st.session_state.placement_matches = st.number_input("배치고사 경기 수", value=st.session_state.get("placement_matches", 10), help="배치고사로 간주되는 초기 경기 수입니다.")
-            st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0), help="배치고사 기간 동안 적용되는 K-Factor 보너스 배율입니다 (Deprecated).")
-            # Added per user request
-            st.session_state.placement_k_factor = st.number_input("배치고사 전용 K-Factor", value=st.session_state.get("placement_k_factor", 64.0), help="배치고사 기간 동안 적용되는 고정 K-Factor입니다.")
+            st.session_state.placement_bonus = st.number_input("배치고사 K-Factor 보너스 배율", value=st.session_state.get("placement_bonus", 4.0), help="배치고사 기간 동안 적용되는 K-Factor 보너스 배율입니다.")
             
             st.subheader("연승/연패 보너스")
             if 'streak_rules' not in st.session_state:
@@ -1352,7 +1350,6 @@ else:
                         base_k=st.session_state.base_k,
                         placement_matches=st.session_state.placement_matches,
                         placement_bonus=st.session_state.placement_bonus,
-                        placement_k_factor=st.session_state.get("placement_k_factor", 64.0),
                         streak_rules=st.session_state.streak_rules.to_dict('records') if isinstance(st.session_state.streak_rules, pd.DataFrame) else st.session_state.streak_rules,
                         goal_diff_rules=st.session_state.goal_diff_rules.to_dict('records') if isinstance(st.session_state.goal_diff_rules, pd.DataFrame) else st.session_state.goal_diff_rules,
                         win_type_decay=win_type_decay,

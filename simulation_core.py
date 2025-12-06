@@ -68,7 +68,6 @@ class ELOConfig:
     base_k: int = 32
     placement_matches: int = 10
     placement_bonus: float = 4.0
-    placement_k_factor: float = 64.0 # Dedicated K-Factor for placement matches (if used instead of bonus logic)
     streak_rules: List[Dict] = field(default_factory=list) # [{'min_streak': 3, 'bonus': 5.0}, ...]
     goal_diff_rules: List[Dict] = field(default_factory=list) # [{'min_diff': 2, 'bonus': 2.0}, ...]
     win_type_decay: Dict[str, float] = field(default_factory=lambda: {'Regular': 1.0, 'Extra': 0.8, 'PK': 0.6})
@@ -624,20 +623,22 @@ class FastSimulation:
         # ... logic copied from original run_day ...
         # K-Factor
         # K-Factor Base
-        k = self.elo_config.base_k
-        k_a = np.full(n_pairs, k)
-        k_b = np.full(n_pairs, k)
+        k = float(self.elo_config.base_k)
+        k_a = np.full(n_pairs, k, dtype=float)
+        k_b = np.full(n_pairs, k, dtype=float)
         
         # 4a. Placement Matches Logic
-        # Users in placement get higher K
+        # Users in placement get higher K via Bonus Multiplier
         pm = self.elo_config.placement_matches
-        pk = self.elo_config.placement_k_factor
+        pb = self.elo_config.placement_bonus
+        # pk no longer used - we use base_k * bonus
         
         mask_place_a = self.matches_played[idx_a] < pm
         mask_place_b = self.matches_played[idx_b] < pm
         
-        k_a[mask_place_a] = pk
-        k_b[mask_place_b] = pk
+        # Apply Bonus
+        k_a[mask_place_a] *= pb
+        k_b[mask_place_b] *= pb
         
         # 4b. Streak Bonus (If configured)
         # Assuming elo_config has streak_k_factor or similar (checking logic from memory/standard)
