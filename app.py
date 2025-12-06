@@ -1666,9 +1666,7 @@ else:
                             pre_mmr = log.current_mmr - log.mmr_change
                             
                             # Determine Tier String using Historical State
-                            if log.match_count < pm:
-                                tier_str = "Unranked (배치)"
-                            elif log.current_tier_index == -1:
+                            if log.current_tier_index == -1:
                                 tier_str = "Unranked (배치)"
                             else:
                                 if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs):
