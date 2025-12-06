@@ -154,7 +154,7 @@ class FastSimulation:
         self.streak = np.zeros(num_users, dtype=int) # Positive=Win, Negative=Loss
         
         # Tier State
-        self.user_tier_index = np.zeros(num_users, dtype=int) # 0 to len(tiers)-1
+        self.user_tier_index = np.full(num_users, -1, dtype=int) # -1 = Unranked, 0 to len(tiers)-1
         self.user_ladder_points = np.zeros(num_users, dtype=int)
         self.user_demotion_lives = np.zeros(num_users, dtype=int)
         
@@ -780,6 +780,23 @@ class FastSimulation:
         loss_indices = np.where(loss_mask)[0]
         
         self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
+        
+        # 5b. Check Placement Completion & Assign Tier
+        # Run AFTER tier updates so that the 10th match itself doesn't trigger ladder points logic instantly (or double count).
+        # We want the 10th match to finalize placement, setting points to 0.
+        pm = self.elo_config.placement_matches
+        # Check users who JUST reached placement_matches (matches_played was incremented above)
+        # Note: matches_played is already updated.
+        
+        # Check A
+        mask_place_complete_a = self.matches_played[idx_a] == pm
+        if mask_place_complete_a.any():
+            self._assign_placement_tier(idx_a[mask_place_complete_a])
+            
+        # Check B
+        mask_place_complete_b = self.matches_played[idx_b] == pm
+        if mask_place_complete_b.any():
+            self._assign_placement_tier(idx_b[mask_place_complete_b])
         # 6. Log Matches
         watched_set = set(self.watched_indices.keys())
         if not watched_set: return
