@@ -352,10 +352,10 @@ class FastSimulation:
                     # Since P5 implies P4 implies P3... we want the highest multiplier.
                     # By processing Low->High Multiplier (P2->P5), we ensure strict overwriting.
                     
-                    if config.promotion_mmr_2 > 0: mults[win_mmrs < config.promotion_mmr_2] = 2
-                    if config.promotion_mmr_3 > 0: mults[win_mmrs < config.promotion_mmr_3] = 3
-                    if config.promotion_mmr_4 > 0: mults[win_mmrs < config.promotion_mmr_4] = 4
-                    if config.promotion_mmr_5 > 0: mults[win_mmrs < config.promotion_mmr_5] = 5
+                    if config.promotion_mmr_2 > 0: mults[win_mmrs >= config.promotion_mmr_2] = 2
+                    if config.promotion_mmr_3 > 0: mults[win_mmrs >= config.promotion_mmr_3] = 3
+                    if config.promotion_mmr_4 > 0: mults[win_mmrs >= config.promotion_mmr_4] = 4
+                    if config.promotion_mmr_5 > 0: mults[win_mmrs >= config.promotion_mmr_5] = 5
                     
                     # Apply to base points
                     points = (points * mults).astype(int)
