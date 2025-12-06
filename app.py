@@ -995,15 +995,21 @@ else:
                         type=t_type,
                         min_mmr=float(row["min_mmr"]),
                         max_mmr=float(row["max_mmr"]),
+                        demotion_mmr=float(row.get("demotion_mmr", 0)),
                         demotion_lives=int(row.get("demotion_lives", 0)),
                         points_win=int(row.get("points_win", 0)),
                         points_draw=int(row.get("points_draw", 0)),
+                        points_loss=int(row.get("points_loss", 0)),
                         promotion_points=int(row.get("promotion_points", 100)),
                         capacity=int(row.get("capacity", 0)),
                         placement_min_mmr=float(row.get("placement_min_mmr", 0)),
                         placement_max_mmr=float(row.get("placement_max_mmr", 0)),
                         promotion_points_low=int(row.get("promotion_points_low", row.get("promotion_points", 100))),
                         promotion_points_high=int(row.get("promotion_points_high", row.get("promotion_points", 100))),
+                        promotion_mmr_2=float(row.get("promotion_mmr_2", 0)),
+                        promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
+                        promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
+                        promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
                         loss_point_correction=float(row.get("loss_point_correction", 1.0)),
                         bot_match_enabled=bool(row.get("bot_match_enabled", False)),
                         bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
@@ -1642,8 +1648,22 @@ else:
                         current_ts = sim.true_skill[target_idx]
                         
                         logs = sim.match_logs.get(target_idx, [])
+                        pm = sim.elo_config.placement_matches # Get placement limit
+                        
                         for log in logs:
                             pre_mmr = log.current_mmr - log.mmr_change
+                            
+                            # Determine Tier String using Historical State
+                            if log.match_count < pm:
+                                tier_str = "Unranked (배치)"
+                            elif log.current_tier_index == -1:
+                                tier_str = "Unranked (배치)"
+                            else:
+                                if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs):
+                                    tier_str = sim.tier_configs[log.current_tier_index].name
+                                else:
+                                    tier_str = "-"
+                            
                             all_logs_data.append({
                                 "User ID": target_idx,
                                 "Segment": seg_name,
@@ -1657,7 +1677,7 @@ else:
                                 "Goal Diff": log.goal_diff,
                                 "Change": f"{log.mmr_change:+.1f}",
                                 "New MMR": f"{log.current_mmr:.1f}",
-                                "Tier": "Unranked (배치)" if log.current_tier_index == -1 else (sim.tier_configs[log.current_tier_index].name if sim.tier_configs and 0 <= log.current_tier_index < len(sim.tier_configs) else "-"),
+                                "Tier": tier_str,
                                 "Ladder Points": log.current_ladder_points
                             })
                     
