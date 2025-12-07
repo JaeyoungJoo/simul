@@ -1323,9 +1323,9 @@ else:
                     use_container_width=True, 
                     key="reset_editor",
                     column_config={
-                        "min_mmr": st.column_config.NumberColumn("최소 MMR", required=True, step=10),
-                        "max_mmr": st.column_config.NumberColumn("최대 MMR", required=True, step=10),
-                        "reset_mmr": st.column_config.NumberColumn("초기화 목표 MMR", required=True, step=10),
+                        "min_mmr": st.column_config.NumberColumn("최소 MMR", required=True, step=0.1, format="%.1f"),
+                        "max_mmr": st.column_config.NumberColumn("최대 MMR", required=True, step=0.1, format="%.1f"),
+                        "reset_mmr": st.column_config.NumberColumn("초기화 목표 MMR", required=True, step=0.1, format="%.1f"),
                         "soft_reset_ratio": st.column_config.NumberColumn("압축 비율 (0=완전초기화)", required=True, min_value=0.0, max_value=1.0, step=0.1, help="0이면 목표 MMR로 완전 초기화, 1이면 현재 MMR 유지. 0.5면 중간값.")
                     }
                 )
