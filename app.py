@@ -1368,7 +1368,7 @@ else:
             st.success("설정이 저장되었습니다!")
 
     # --- Main Content ---
-    st.title("Rank simulation")
+    st.title("Rank simulation (v1.1)")
 
     tab1, tab2, tab3, tab4 = st.tabs(["시뮬레이션 실행", "분석", "매치 기록", "랭크 분석"])
 
