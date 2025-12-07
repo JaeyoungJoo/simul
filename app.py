@@ -2040,7 +2040,8 @@ else:
                     "_mmr_gap": None, # Hide helper columns
                     "_ts_gap": None
                 },
-                use_container_width=True
+                width="stretch"
+
             )
             
             # Chart (Grouped Bar)
