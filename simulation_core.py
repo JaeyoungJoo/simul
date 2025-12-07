@@ -518,6 +518,14 @@ class FastSimulation:
                                 pre_match_risk_vals = np.array([pre_mmr_lookup[idx] for idx in risk_indices])
                                 
                                 mmr_risk_mask = pre_match_risk_vals < config.demotion_mmr
+                                
+                                # DEBUG: Demotion Trace
+                                if t_idx == 4 and len(risk_indices) > 0: # Assuming Semipro 3
+                                    import streamlit as st
+                                    st.toast(f"Demotion Check T{t_idx}: PreMMR {pre_match_risk_vals[0]:.1f} vs Limit {config.demotion_mmr}. Triggered? {mmr_risk_mask[0]}")
+                                    if mmr_risk_mask[0]:
+                                        st.error(f"DEMOTION RISK: User {risk_indices[0]} PreMMR {pre_match_risk_vals[0]} < Limit {config.demotion_mmr}")
+
                                 risk_indices = risk_indices[mmr_risk_mask]
                             
                             if len(risk_indices) > 0:
