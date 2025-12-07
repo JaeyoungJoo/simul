@@ -2071,83 +2071,49 @@ else:
             
             st.divider()
             st.markdown("#### 승급 소요 매치 수 분석 (Promotion Speed)")
-            st.caption("각 티어에서 상위 티어로 승급하기까지 걸린 매치 수 분포 (Sample Users 기준)")
+            st.caption("각 티어에서 상위 티어로 승급하기까지 걸린 매치 수 분포 (전체 유저 대상)")
             
             promo_durations = []
             
-            if sim.match_logs:
-                for uid, logs in sim.match_logs.items():
-                    if not logs: continue
-                    # Extract tier sequence
-                    # Note: We need to reconstruct the timeline.
-                    # matches are sequential in list.
+            # Use aggregated global stats instead of sample logs
+            if hasattr(sim, 'promotion_durations') and sim.promotion_durations:
+                for t_name, durations in sim.promotion_durations.items():
+                    if not durations: continue
                     
-                    # Algorithm:
-                    # 1. Track current tier start index.
-                    # 2. When tier changes UPWARD, record duration.
-                    
-                    first_log = logs[0]
-                    curr_tier = first_log.current_tier_index
-                    # If starts at -1, ignore until 0?
-                    # But logs might start mid-season? FastSimulation starts at 0 or placement.
-                    
-                    # We assume logs are complete history for the session.
-                    
-                    current_streak_start = 0 # match index within logs
-                    
-                    for i in range(1, len(logs)):
-                        prev_tier = logs[i-1].current_tier_index
-                        this_tier = logs[i].current_tier_index
-                        
-                        if this_tier != prev_tier:
-                            # Transition detected
-                            if this_tier > prev_tier and prev_tier >= 0:
-                                # Promotion!
-                                # Duration = matches played in prev_tier
-                                # Range [current_streak_start, i-1] inclusive are matches played IN prev_tier
-                                # Actually match i (this match) *caused* the promotion, so it counts strictly as the "final match of the grade"?
-                                # Usually "matches to promote" includes the winning match.
-                                # So count = i - current_streak_start + 1.
-                                
-                                duration = i - current_streak_start + 1
-                                
-                                # Get tier name
-                                if prev_tier < len(sim.tier_configs):
-                                    t_name = sim.tier_configs[prev_tier].name
-                                    promo_durations.append({
-                                        "From Tier": t_name,
-                                        "Matches Needed": duration,
-                                        "User ID": uid
-                                    })
-                            
-                            # Reset for new tier (whether promo or demo)
-                            current_streak_start = i+1 # Start counting from NEXT match?
-                            # Wait. If match `i` put me in `this_tier`.
-                            # Match `i+1` will be the first match played *as* `this_tier`.
-                            # So yes, start at i+1.
-                            
-                            # Correction: Match `i` result log shows `current_tier_index` = `this_tier`.
-                            # This means after Match `i`, I am now `this_tier`.
-                            # Match `i` was played while I was `prev_tier`.
-                            # So Match `i` belongs to `prev_tier` count.
-                            # So duration is indeed `i - current_streak_start + 1`.
-                            # And the next streak starts at `i+1`. Correct.
-            
+                    # Add to list for DataFrame
+                    for d in durations:
+                        promo_durations.append({
+                            "From Tier": t_name,
+                            "Matches Needed": d,
+                        })
+            elif sim.match_logs: # Fallback for legacy / active support if needed, but new logic is preferred
+                 st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
+
             if promo_durations:
                 df_promo = pd.DataFrame(promo_durations)
                 
                 # Order tiers logic
                 tier_order = [t.name for t in sim.tier_configs]
                 
-                fig_promo = px.box(df_promo, x="From Tier", y="Matches Needed", 
+                # Sample Down if too huge? 
+                # Boxplot handles lots of points, but if > 100k points, might be slow.
+                # Plotly box plot is generally fine for < 100k. 
+                # If too slow, we can sample.
+                if len(df_promo) > 10000:
+                    df_promo_plot = df_promo.sample(10000)
+                    st.caption(f"데이터가 많아 10,000건을 랜덤 샘플링하여 표시합니다. (전체 승급 건수: {len(df_promo):,})")
+                else:
+                    df_promo_plot = df_promo
+
+                fig_promo = px.box(df_promo_plot, x="From Tier", y="Matches Needed", 
                                    title="티어별 승급 소요 매치 분포 (Lower is Faster)",
-                                   points="all", # Show individual dots
+                                   # points="all", # Too many points now
                                    category_orders={"From Tier": tier_order},
                                    color="From Tier")
                 
                 st.plotly_chart(fig_promo, use_container_width=True)
                 
-                # Calculate Summary Table (Q1, Median, Q3)
+                # Calculate Summary Table (Q1, Median, Q3) - Use FULL data
                 summary_promo = df_promo.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
                 # Filter relevant columns
                 summary_promo = summary_promo[["count", "25%", "50%", "75%", "mean"]]

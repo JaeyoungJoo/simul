@@ -4,6 +4,7 @@ import numpy as np
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict
+import collections
 
 CORE_VERSION = "1.3 (Rank System Overhaul)"
 print(f"Simulation Core Loaded: Version {CORE_VERSION}")
@@ -163,6 +164,10 @@ class FastSimulation:
         self.user_demotion_lives[:] = 3 # Default fallback
         if self.tier_configs:
             self.user_demotion_lives[:] = self.tier_configs[0].demotion_lives
+            
+        # Promotion Analysis (Track all users)
+        self.matches_in_current_tier = np.zeros(num_users, dtype=int)
+        self.promotion_durations = collections.defaultdict(list) # {TierName: [durations...]}
         
         # True Skill & Activity (for Matchmaking simulation)
         self.true_skill = np.zeros(num_users)
@@ -268,6 +273,7 @@ class FastSimulation:
             self.user_tier_index[i] = assigned_idx
             self.user_ladder_points[i] = 0 
             self.user_demotion_lives[i] = self.tier_configs[assigned_idx].demotion_lives
+            self.matches_in_current_tier[i] = 0 # Reset duration counter on placement
             
             # Update temp count
             if self.tier_configs[assigned_idx].type == TierType.RATIO:
@@ -278,6 +284,10 @@ class FastSimulation:
         watched_set = set(self.watched_indices.keys())
         original_mmrs = self.mmr.copy() # Snapshot to prevent chaining
         processed_mask = np.zeros(len(self.mmr), dtype=bool) # Track usage to prevent overlap
+        
+        # Reset vectorized duration tracker globally (Season Reset)
+        self.matches_in_current_tier[:] = 0
+        self.promotion_durations.clear()
         
         for rule in rules:
              # Handle keys (schema compatibility)
@@ -367,6 +377,10 @@ class FastSimulation:
     def _update_single_batch(self, indices, results, current_mmrs):
         # Snapshot current stats to prevent "Ladder Cascading" (promoting multiple times in one loop)
         current_tier_snapshot = self.user_tier_index[indices].copy()
+        
+        # Track Matches in Current Tier (Increment for all participants)
+        # Note: We increment BEFORE checking promotion, so the promoting match counts towards the duration.
+        self.matches_in_current_tier[indices] += 1
         
         for t_idx, config in enumerate(self.tier_configs):
             # Identify users in this tier (using snapshot)
@@ -472,6 +486,17 @@ class FastSimulation:
             
             # Execute Promotion
             if len(prom_indices) > 0 and t_idx < len(self.tier_configs) - 1:
+                # Record Promotion Durations
+                # We need the name of the tier they are promoting FROM (i.e. config.name)
+                # All in this loop are in tier `t_idx` (based on snapshot)
+                # Note: We use t_idx derived name, which is consistent.
+                
+                current_durations = self.matches_in_current_tier[prom_indices]
+                self.promotion_durations[config.name].extend(current_durations.tolist())
+                
+                # Reset counters for promoted users
+                self.matches_in_current_tier[prom_indices] = 0
+                
                 self.user_tier_index[prom_indices] += 1
                 self.user_ladder_points[prom_indices] = 0
                 new_tier = self.tier_configs[t_idx+1]
@@ -490,6 +515,9 @@ class FastSimulation:
                      if len(dem_indices) > 0:
                          self.user_tier_index[dem_indices] -= 1
                          self.user_ladder_points[dem_indices] = 0
+                         # Reset counters for demoted users (failed attempt)
+                         self.matches_in_current_tier[dem_indices] = 0
+                         
                          lower_tier = self.tier_configs[t_idx-1]
                          self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                          self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
