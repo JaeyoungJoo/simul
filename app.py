@@ -2030,6 +2030,45 @@ else:
                                  labels={"Gap": "Difference (Actual - Target)"})
                 st.plotly_chart(fig_div, use_container_width=True)
 
+            st.divider()
+            st.markdown("#### 티어 내 상/하위 25% MMR 격차 분석")
+            
+            spread_data = []
+            for i, config in enumerate(sim.tier_configs):
+                indices = np.where(sim.user_tier_index == i)[0]
+                if len(indices) > 0:
+                    tier_mmrs = np.sort(sim.mmr[indices])
+                    n = len(tier_mmrs)
+                    
+                    # Prevent index errors for small N
+                    if n >= 4:
+                        # Top 25%
+                        top_start = int(n * 0.75)
+                        top_mean = np.mean(tier_mmrs[top_start:])
+                        
+                        # Bottom 25%
+                        bot_end = int(n * 0.25)
+                        if bot_end == 0: bot_end = 1 # Safety
+                        bot_mean = np.mean(tier_mmrs[:bot_end])
+                        
+                        spread = top_mean - bot_mean
+                    else:
+                        # If very few users, just spread = Max - Min
+                        spread = tier_mmrs[-1] - tier_mmrs[0]
+                    
+                    spread_data.append({"Tier": config.name, "MMR Spread (Top - Bottom 25%)": spread})
+            
+            if spread_data:
+                df_spread = pd.DataFrame(spread_data)
+                fig_spread = px.bar(df_spread, x="Tier", y="MMR Spread (Top - Bottom 25%)", 
+                                    title="티어별 상위 25% vs 하위 25% 평균 MMR 격차",
+                                    text_auto='.1f',
+                                    color="MMR Spread (Top - Bottom 25%)",
+                                    color_continuous_scale="Viridis")
+                st.plotly_chart(fig_spread, use_container_width=True)
+            else:
+                st.info("데이터가 부족하여 격차 분석을 표시할 수 없습니다.")
+
     # --- Comments Section ---
     st.divider()
     st.subheader("Comment")
