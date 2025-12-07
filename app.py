@@ -1092,7 +1092,6 @@ else:
                 edited_tiers = st.data_editor(
                     df_tiers,
                     num_rows="dynamic",
-                    use_container_width=True,
                     key="tier_editor",
                     column_config={
                         "name": st.column_config.TextColumn("티어 이름", required=True),
@@ -1320,7 +1319,6 @@ else:
                 st.session_state.reset_rules = st.data_editor(
                     st.session_state.reset_rules, 
                     num_rows="dynamic", 
-                    use_container_width=True, 
                     key="reset_editor",
                     column_config={
                         "min_mmr": st.column_config.NumberColumn("최소 MMR", required=True, step=0.1, format="%.1f"),
