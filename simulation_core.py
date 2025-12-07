@@ -442,6 +442,17 @@ class FastSimulation:
                 target_points[high_mask] = config.promotion_points_high
                 
                 prom_mask = self.user_ladder_points[subset_indices] >= target_points
+                
+                # DEBUG: Trace Promotion Logic
+                if t_idx == 4: 
+                    if len(subset_indices) > 0 and self.day > 0:
+                        import streamlit as st
+                        if self.user_ladder_points[subset_indices][0] > 0: # Only if points exist
+                             st.toast(f"Rule T{t_idx}: Pts {self.user_ladder_points[subset_indices][0]} vs Target {target_points[0]}")
+                             # Also validation
+                             if target_points[0] > 10:
+                                 st.error(f"ALERT: Target Points is {target_points[0]}. You only have {self.user_ladder_points[subset_indices][0]}.")
+
                 if prom_mask.any():
                     candidates = subset_indices[prom_mask]
                     prom_indices = candidates
