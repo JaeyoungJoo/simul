@@ -504,8 +504,20 @@ class FastSimulation:
                         
                         if len(risk_indices) > 0:
                             # Check MMR trigger (if set)
+                            # Check MMR trigger (if set)
                             if config.demotion_mmr > 0:
-                                mmr_risk_mask = self.mmr[risk_indices] < config.demotion_mmr
+                                # Use PRE-MATCH MMR for fairness (Warning based)
+                                # subset_mmrs contains pre-match values aligned with subset_indices
+                                # Map risk_indices back to their pre-match values
+                                # Optimization: Vectorized lookup might be hard due to filtering steps.
+                                # Using simple fancy indexing on global array is wrong (it's updated).
+                                # Using dict lookup from subset_mmrs:
+                                
+                                # Setup lookup (subset size is small, ~batch size)
+                                pre_mmr_lookup = dict(zip(subset_indices, subset_mmrs))
+                                pre_match_risk_vals = np.array([pre_mmr_lookup[idx] for idx in risk_indices])
+                                
+                                mmr_risk_mask = pre_match_risk_vals < config.demotion_mmr
                                 risk_indices = risk_indices[mmr_risk_mask]
                             
                             if len(risk_indices) > 0:
