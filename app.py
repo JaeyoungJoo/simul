@@ -2073,57 +2073,49 @@ else:
             st.markdown("#### 승급 소요 매치 수 분석 (Promotion Speed)")
             st.caption("각 티어에서 상위 티어로 승급하기까지 걸린 매치 수 분포 (전체 유저 대상)")
             
-            promo_durations = []
-            
-            # Use aggregated global stats instead of sample logs
-            if hasattr(sim, 'promotion_durations'):
-                if sim.promotion_durations:
-                    for t_name, durations in sim.promotion_durations.items():
-                        if not durations: continue
-                        
-                        # Add to list for DataFrame
-                        for d in durations:
-                            promo_durations.append({
-                                "From Tier": t_name,
-                                "Matches Needed": d,
-                            })
-            elif sim.match_logs: # Fallback for legacy / active support if needed, but new logic is preferred
-                 st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
+            try:
+                promo_durations = []
+                
+                # Use aggregated global stats instead of sample logs
+                if hasattr(sim, 'promotion_durations'):
+                    if sim.promotion_durations:
+                        for t_name, durations in sim.promotion_durations.items():
+                            if not durations: continue
+                            
+                            for d in durations:
+                                promo_durations.append({
+                                    "From Tier": t_name,
+                                    "Matches Needed": d,
+                                })
+                elif sim.match_logs: 
+                     st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
 
-            if promo_durations:
-                df_promo = pd.DataFrame(promo_durations)
-                
-                # Order tiers logic
-                tier_order = [t.name for t in sim.tier_configs]
-                
-                # Order tiers logic
-                tier_order = [t.name for t in sim.tier_configs] # Ensure ordering matches config
-                
-                if len(tier_order) < 2:
-                    st.warning("승급 분석을 위해서는 최소 2개 이상의 티어가 필요합니다.")
-                else:
-                    # Range Selection for Cumulative Analysis
-                    st.markdown("##### 구간 누적 승급 소요 매치 (Cumulative Matches)")
-                    match_col1, match_col2 = st.columns(2)
+                if promo_durations:
+                    df_promo = pd.DataFrame(promo_durations)
                     
-                    # Safe Indexing
-                    start_opts = tier_order[:-1]
-                    with match_col1:
-                        start_tier_sel = st.selectbox("시작 티어 (Start)", options=start_opts, index=0)
+                    tier_order = [t.name for t in sim.tier_configs] # Ensure ordering matches config
                     
-                    with match_col2:
-                        # Target should be higher than start
-                        start_idx = tier_order.index(start_tier_sel)
-                        target_opts = tier_order[start_idx+1:]
+                    if len(tier_order) < 2:
+                        st.warning("승급 분석을 위해서는 최소 2개 이상의 티어가 필요합니다.")
+                    else:
+                        st.markdown("##### 구간 누적 승급 소요 매치 (Cumulative Matches)")
+                        match_col1, match_col2 = st.columns(2)
                         
-                        if target_opts:
-                            target_tier_sel = st.selectbox("목표 티어 (Target)", options=target_opts, index=0)
-                        else:
-                            target_tier_sel = None
-                            st.warning("더 높은 티어가 없습니다.")
-                    
-                    if target_tier_sel:
-                        try:
+                        start_opts = tier_order[:-1]
+                        with match_col1:
+                            start_tier_sel = st.selectbox("시작 티어 (Start)", options=start_opts, index=0)
+                        
+                        with match_col2:
+                            start_idx = tier_order.index(start_tier_sel)
+                            target_opts = tier_order[start_idx+1:]
+                            
+                            if target_opts:
+                                target_tier_sel = st.selectbox("목표 티어 (Target)", options=target_opts, index=0)
+                            else:
+                                target_tier_sel = None
+                                st.warning("더 높은 티어가 없습니다.")
+                        
+                        if target_tier_sel:
                             # Identify tiers to aggregate (From Start up to Target-1)
                             target_idx = tier_order.index(target_tier_sel)
                             intermediate_tiers = tier_order[start_idx : target_idx]
@@ -2132,14 +2124,10 @@ else:
                             
                             if not df_filtered.empty:
                                 grouped = df_filtered.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
-                                # Reindex to ensure order and fill missing with 0 (for steps with no data)
                                 grouped = grouped.reindex(intermediate_tiers).fillna(0)
                                 
-                                # Sum statistics
-                                # Note: Summing percentiles is an approximation for "Sequential Steps"
                                 total_stats = grouped[["mean", "25%", "50%", "75%"]].sum()
                                 
-                                # Display Cumulative Result
                                 st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
                                 
                                 res_col1, res_col2, res_col3, res_col4 = st.columns(4)
@@ -2150,7 +2138,6 @@ else:
                                 
                                 st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
                                 
-                                # Optional: Show breakdown table
                                 with st.expander("구간별 상세 데이터 (Breakdown)", expanded=False):
                                     display_df = grouped[["count", "25%", "50%", "75%", "mean"]].rename(columns={
                                         "25%": "matches (Fast)", "50%": "matches (Median)", "75%": "matches (Slow)", "mean": "matches (Avg)"
@@ -2159,10 +2146,10 @@ else:
                                      
                             else:
                                 st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
-                        except Exception as e:
-                            st.error(f"분석 중 오류 발생: {e}")
-            else:
-                st.info("아직 승급 데이터가 충분하지 않습니다.")
+                else:
+                    st.info("아직 승급 데이터가 충분하지 않습니다.")
+            except Exception as e:
+                st.error(f"분석 로직 처리 중 오류가 발생했습니다: {e}")
 
     # --- Comments Section ---
     st.divider()
