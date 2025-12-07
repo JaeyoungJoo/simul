@@ -1428,6 +1428,11 @@ else:
                      stats_history = st.session_state.stats_history
                 
                 st.write(f"Debug: Num days = {st.session_state.num_days}") # Debug
+                
+                # HOT RELOAD: Ensure exact tier config from UI is used, even if changed after init.
+                if st.session_state.simulation and "tier_config" in st.session_state:
+                     st.session_state.simulation.tier_configs = st.session_state.tier_config
+                
                 for day in range(st.session_state.num_days):
                     sim.run_day()
                     # Collect daily stats for plotting
