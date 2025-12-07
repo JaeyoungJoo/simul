@@ -2223,6 +2223,120 @@ else:
             except Exception as e:
                 st.error(f"분석 로직 처리 중 오류가 발생했습니다: {e}")
 
+            st.divider()
+            st.markdown("#### 티어별 MMR 분포 적정성 (MMR Alignment)")
+            st.caption("각 티어의 설정된 MMR 범위(중위값)와 실제 유저들의 MMR(상위/하위 25%) 비교")
+            
+            try:
+                if hasattr(sim, 'tier_configs') and hasattr(sim, 'mmr') and hasattr(sim, 'tiers'):
+                    
+                    alignment_data = []
+                    
+                    # Convert to numpy for fast indexing if not already
+                    current_mmrs = np.array(sim.mmr)
+                    current_tiers = np.array(sim.tiers)
+                    
+                    for i, t_config in enumerate(sim.tier_configs):
+                        t_name = t_config.name
+                        t_min = t_config.min_mmr
+                        t_max = t_config.max_mmr
+                        
+                        # 1. Configured Median
+                        # Handle infinite max (use a heuristic: min + 200 or just skip line connection if infinite?)
+                        # Logic: If max is > 99999, treat as "Open End". We use Min + offset or just mark Min.
+                        # User Request: "middle of min/max". 
+                        if t_max > 90000:
+                            # For infinite tier, visual median is tricky. Let's use Min + (PrevRange / 2) or just Min + 100
+                            # Or just don't plot "Config Median" for top tier, or set it to Min.
+                            # Let's set it to Min for the Top tier to indicate the floor.
+                            config_median = t_min 
+                        else:
+                            config_median = (t_min + t_max) / 2
+                        
+                        # 2. User Stats
+                        # Filter users in this tier (assuming sim.tiers holds indices 0..N)
+                        # Caution: sim.tiers might be integers.
+                        tier_users_mmr = current_mmrs[current_tiers == i]
+                        
+                        if len(tier_users_mmr) > 0:
+                            # Top 25% Average (Users above 75th percentile)
+                            p75 = np.percentile(tier_users_mmr, 75)
+                            top_25_users = tier_users_mmr[tier_users_mmr >= p75]
+                            avg_top_25 = np.mean(top_25_users) if len(top_25_users) > 0 else p75
+                            
+                            # Bottom 25% Average (Users below 25th percentile)
+                            p25 = np.percentile(tier_users_mmr, 25)
+                            bottom_25_users = tier_users_mmr[tier_users_mmr <= p25]
+                            avg_bottom_25 = np.mean(bottom_25_users) if len(bottom_25_users) > 0 else p25
+                            
+                            alignment_data.append({
+                                "Tier": t_name,
+                                "Config Median": config_median,
+                                "User Top 25% Avg": avg_top_25,
+                                "User Bottom 25% Avg": avg_bottom_25,
+                                "User Count": len(tier_users_mmr)
+                            })
+                        else:
+                             alignment_data.append({
+                                "Tier": t_name,
+                                "Config Median": config_median,
+                                "User Top 25% Avg": None,
+                                "User Bottom 25% Avg": None,
+                                "User Count": 0
+                            })
+                    
+                    if alignment_data:
+                        df_align = pd.DataFrame(alignment_data)
+                        
+                        # Create Plotly Chart
+                        fig_align = go.Figure()
+                        
+                        # 1. Config Median (Line)
+                        fig_align.add_trace(go.Scatter(
+                            x=df_align["Tier"], y=df_align["Config Median"],
+                            mode='lines+markers', name='Config Median (설정 중위값)',
+                            line=dict(color='green', dash='dash'),
+                            marker=dict(symbol='diamond')
+                        ))
+                        
+                        # 2. User Top 25% Avg (Line)
+                        fig_align.add_trace(go.Scatter(
+                            x=df_align["Tier"], y=df_align["User Top 25% Avg"],
+                            mode='lines+markers', name='Actual Top 25% Avg (실제 상위)',
+                            line=dict(color='red'),
+                            marker=dict(symbol='triangle-up')
+                        ))
+                        
+                        # 3. User Bottom 25% Avg (Line)
+                        fig_align.add_trace(go.Scatter(
+                            x=df_align["Tier"], y=df_align["User Bottom 25% Avg"],
+                            mode='lines+markers', name='Actual Bottom 25% Avg (실제 하위)',
+                            line=dict(color='blue'),
+                            marker=dict(symbol='triangle-down')
+                        ))
+                        
+                        fig_align.update_layout(
+                            title="티어별 설정값 대비 실제 유저 위치 (MMR Alignment)",
+                            xaxis_title="Tier",
+                            yaxis_title="MMR",
+                            hovermode="x unified",
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig_align, width="stretch")
+                        
+                        with st.expander("데이터 상세 보기 (Data Table)"):
+                            st.dataframe(df_align.style.format({
+                                "Config Median": "{:.1f}", 
+                                "User Top 25% Avg": "{:.1f}", 
+                                "User Bottom 25% Avg": "{:.1f}"
+                            }))
+                            
+                else:
+                    st.info("데이터가 부족하여 적정성 분석을 수행할 수 없습니다.")
+            except Exception as e:
+                st.error(f"MMR 적정성 분석 중 오류 발생: {e}")
+
     # --- Comments Section ---
     st.divider()
     st.subheader("Comment")
