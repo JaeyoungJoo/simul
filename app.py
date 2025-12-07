@@ -1641,9 +1641,8 @@ else:
             # Fast Mode Logic
             st.info("고속 모드 활성: 세그먼트별 샘플 유저 보기")
             
-            # Get all available segments from watched indices
-            # watched_indices is {user_idx: segment_name}
-            available_segments = sorted(list(set(sim.watched_indices.values())))
+            # Get all configured segments (Use sim.seg_names to show all registered segments, not just those with watched users)
+            available_segments = list(sim.seg_names)
             
             selected_segments_multi = st.multiselect("확인할 세그먼트 선택 (다중 선택 가능)", available_segments, default=available_segments[:1] if available_segments else None)
             
