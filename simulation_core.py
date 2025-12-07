@@ -444,14 +444,27 @@ class FastSimulation:
                 prom_mask = self.user_ladder_points[subset_indices] >= target_points
                 
                 # DEBUG: Trace Promotion Logic
-                if t_idx == 4: 
+                if t_idx == 4: # Semipro 3
                     if len(subset_indices) > 0 and self.day > 0:
                         import streamlit as st
-                        if self.user_ladder_points[subset_indices][0] > 0: # Only if points exist
-                             st.toast(f"Rule T{t_idx}: Pts {self.user_ladder_points[subset_indices][0]} vs Target {target_points[0]}")
-                             # Also validation
-                             if target_points[0] > 10:
-                                 st.error(f"ALERT: Target Points is {target_points[0]}. You only have {self.user_ladder_points[subset_indices][0]}.")
+                        u_idx = subset_indices[0]
+                        
+                        # Find if this user WON or DREW
+                        is_win = False
+                        is_draw = False
+                        
+                        # Indices are parallel to results in update_single_batch?
+                        # No, subset_indices is a subset of 'indices' passed to _update_single_batch
+                        # But loop iterates unique tiers.
+                        # Wait, _update_single_batch receives indices, results.
+                        # We need to map subset_indices back to results.
+                        # Efficient check:
+                        
+                        # Just log global config state once per batch
+                        st.toast(f"T4 Config: WinPts={config.points_win}, PromPts={config.promotion_points}, Type={config.type}")
+                        
+                        if target_points[0] > 10:
+                             st.error(f"ALERT: Target is {target_points[0]}. Config High: {config.promotion_points_high}")
 
                 if prom_mask.any():
                     candidates = subset_indices[prom_mask]
