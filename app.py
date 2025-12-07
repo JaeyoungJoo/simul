@@ -610,7 +610,7 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
                 
                 # Update last activity
                 expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
-                cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+                cookie_manager.set("last_activity", str(current_time), expires_at=expires_at, key="set_last_activity_restore")
                 st.rerun()
         except ValueError:
             pass
