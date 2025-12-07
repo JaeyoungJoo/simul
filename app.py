@@ -2228,13 +2228,13 @@ else:
             st.caption("각 티어의 설정된 MMR 범위(중위값)와 실제 유저들의 MMR(상위/하위 25%) 비교")
             
             try:
-                if hasattr(sim, 'tier_configs') and hasattr(sim, 'mmr') and hasattr(sim, 'tiers'):
+                if hasattr(sim, 'tier_configs') and hasattr(sim, 'mmr') and hasattr(sim, 'user_tier_index'):
                     
                     alignment_data = []
                     
                     # Convert to numpy for fast indexing if not already
                     current_mmrs = np.array(sim.mmr)
-                    current_tiers = np.array(sim.tiers)
+                    current_tiers = np.array(sim.user_tier_index)
                     
                     for i, t_config in enumerate(sim.tier_configs):
                         t_name = t_config.name
