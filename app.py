@@ -2068,6 +2068,99 @@ else:
                 st.plotly_chart(fig_spread, use_container_width=True)
             else:
                 st.info("데이터가 부족하여 격차 분석을 표시할 수 없습니다.")
+            
+            st.divider()
+            st.markdown("#### 승급 소요 매치 수 분석 (Promotion Speed)")
+            st.caption("각 티어에서 상위 티어로 승급하기까지 걸린 매치 수 분포 (Sample Users 기준)")
+            
+            promo_durations = []
+            
+            if sim.match_logs:
+                for uid, logs in sim.match_logs.items():
+                    if not logs: continue
+                    # Extract tier sequence
+                    # Note: We need to reconstruct the timeline.
+                    # matches are sequential in list.
+                    
+                    # Algorithm:
+                    # 1. Track current tier start index.
+                    # 2. When tier changes UPWARD, record duration.
+                    
+                    first_log = logs[0]
+                    curr_tier = first_log.current_tier_index
+                    # If starts at -1, ignore until 0?
+                    # But logs might start mid-season? FastSimulation starts at 0 or placement.
+                    
+                    # We assume logs are complete history for the session.
+                    
+                    current_streak_start = 0 # match index within logs
+                    
+                    for i in range(1, len(logs)):
+                        prev_tier = logs[i-1].current_tier_index
+                        this_tier = logs[i].current_tier_index
+                        
+                        if this_tier != prev_tier:
+                            # Transition detected
+                            if this_tier > prev_tier and prev_tier >= 0:
+                                # Promotion!
+                                # Duration = matches played in prev_tier
+                                # Range [current_streak_start, i-1] inclusive are matches played IN prev_tier
+                                # Actually match i (this match) *caused* the promotion, so it counts strictly as the "final match of the grade"?
+                                # Usually "matches to promote" includes the winning match.
+                                # So count = i - current_streak_start + 1.
+                                
+                                duration = i - current_streak_start + 1
+                                
+                                # Get tier name
+                                if prev_tier < len(sim.tier_configs):
+                                    t_name = sim.tier_configs[prev_tier].name
+                                    promo_durations.append({
+                                        "From Tier": t_name,
+                                        "Matches Needed": duration,
+                                        "User ID": uid
+                                    })
+                            
+                            # Reset for new tier (whether promo or demo)
+                            current_streak_start = i+1 # Start counting from NEXT match?
+                            # Wait. If match `i` put me in `this_tier`.
+                            # Match `i+1` will be the first match played *as* `this_tier`.
+                            # So yes, start at i+1.
+                            
+                            # Correction: Match `i` result log shows `current_tier_index` = `this_tier`.
+                            # This means after Match `i`, I am now `this_tier`.
+                            # Match `i` was played while I was `prev_tier`.
+                            # So Match `i` belongs to `prev_tier` count.
+                            # So duration is indeed `i - current_streak_start + 1`.
+                            # And the next streak starts at `i+1`. Correct.
+            
+            if promo_durations:
+                df_promo = pd.DataFrame(promo_durations)
+                
+                # Order tiers logic
+                tier_order = [t.name for t in sim.tier_configs]
+                
+                fig_promo = px.box(df_promo, x="From Tier", y="Matches Needed", 
+                                   title="티어별 승급 소요 매치 분포 (Lower is Faster)",
+                                   points="all", # Show individual dots
+                                   category_orders={"From Tier": tier_order},
+                                   color="From Tier")
+                
+                st.plotly_chart(fig_promo, use_container_width=True)
+                
+                # Calculate Summary Table (Q1, Median, Q3)
+                summary_promo = df_promo.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
+                # Filter relevant columns
+                summary_promo = summary_promo[["count", "25%", "50%", "75%", "mean"]]
+                summary_promo = summary_promo.rename(columns={
+                    "25%": "Top 25% (Fast)", 
+                    "50%": "Median", 
+                    "75%": "Bottom 25% (Slow)",
+                    "mean": "Mean"
+                })
+                st.dataframe(summary_promo.style.format("{:.1f}"), use_container_width=True)
+                
+            else:
+                st.info("아직 승급 데이터가 충분하지 않습니다.")
 
     # --- Comments Section ---
     st.divider()
