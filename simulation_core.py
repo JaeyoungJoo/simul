@@ -739,8 +739,6 @@ class FastSimulation:
         k_a = k_a.astype(np.float64)
         k_b = k_b.astype(np.float64)
         
-        print(f"DEBUG: Batch Match K-Factor Check - Type: {k_a.dtype}, Sample: {k_a[0] if n_pairs>0 else 'N/A'}")
-        
         # 4a. Placement Matches Logic
         # Users in placement get higher K via Bonus Multiplier
         pm = self.elo_config.placement_matches
