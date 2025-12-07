@@ -2096,61 +2096,67 @@ else:
                 # Order tiers logic
                 tier_order = [t.name for t in sim.tier_configs]
                 
-                # Tier Filter (Range Slider)
-                if len(tier_order) > 1:
-                    start_tier, end_tier = st.select_slider(
-                        "분석할 티어 범위 선택 (From Tier)",
-                        options=tier_order,
-                        value=(tier_order[0], tier_order[-1])
-                    )
-                    
-                    # Slicing logic
-                    try:
-                        start_idx = tier_order.index(start_tier)
-                        end_idx = tier_order.index(end_tier)
-                        # Ensure correct order if user dragged backwards (though select_slider handles this usually)
-                        if start_idx > end_idx: start_idx, end_idx = end_idx, start_idx
-                        
-                        selected_tiers = tier_order[start_idx : end_idx+1]
-                        df_promo = df_promo[df_promo["From Tier"].isin(selected_tiers)]
-                    except ValueError:
-                        pass # Should not happen
-
-                # Sample Down if too huge? 
-                # Boxplot handles lots of points, but if > 100k points, might be slow.
-                # Plotly box plot is generally fine for < 100k. 
-                # If too slow, we can sample.
-                if len(df_promo) > 10000:
-                    df_promo_plot = df_promo.sample(10000)
-                    st.caption(f"데이터가 많아 10,000건을 랜덤 샘플링하여 표시합니다. (선택된 범위 승급 건수: {len(df_promo):,})")
-                else:
-                    df_promo_plot = df_promo
+                # Order tiers logic
+                tier_order = [t.name for t in sim.tier_configs]
                 
-                if df_promo_plot.empty:
-                    st.warning("선택한 범위에 승급 데이터가 없습니다.")
-                else:
-                    fig_promo = px.box(df_promo_plot, x="From Tier", y="Matches Needed", 
-                                    title=f"티어별 승급 소요 매치 분포 ({start_tier} ~ {end_tier})",
-                                    # points="all", # Too many points now
-                                    category_orders={"From Tier": tier_order}, # Keep global order ensuring consistency
-                                    color="From Tier")
+                # Range Selection for Cumulative Analysis
+                st.markdown("##### 구간 누적 승급 소요 매치 (Cumulative Matches)")
+                match_col1, match_col2 = st.columns(2)
+                with match_col1:
+                    start_tier_sel = st.selectbox("시작 티어 (Start)", options=tier_order[:-1], index=0)
+                with match_col2:
+                    # Target should be higher than start
+                    start_idx = tier_order.index(start_tier_sel)
+                    target_opts = tier_order[start_idx+1:]
+                    if target_opts:
+                        target_tier_sel = st.selectbox("목표 티어 (Target)", options=target_opts, index=0)
+                    else:
+                        target_tier_sel = None
+                        st.warning("목표 티어를 선택할 수 없습니다.")
+                
+                if target_tier_sel:
+                    # Identify tiers to aggregate (From Start up to Target-1)
+                    # Because to reach Target, you must pass (Target-1).
+                    target_idx = tier_order.index(target_tier_sel)
+                    intermediate_tiers = tier_order[start_idx : target_idx]
                     
-                    st.plotly_chart(fig_promo, use_container_width=True)
+                    df_filtered = df_promo[df_promo["From Tier"].isin(intermediate_tiers)]
                     
-                    # Calculate Summary Table (Q1, Median, Q3) - Use FULL filtered data
-                    summary_promo = df_promo.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
-                    # Sort index by tier order
-                    summary_promo = summary_promo.reindex(selected_tiers).dropna()
-                    
-                    # Filter relevant columns
-                    summary_promo = summary_promo[["count", "25%", "50%", "75%", "mean"]]
-                    summary_promo = summary_promo.rename(columns={
-                        "25%": "Top 25% (Fast)", 
-                        "50%": "Median", 
-                        "75%": "Bottom 25% (Slow)",
-                        "mean": "Mean"
-                    })
-                    st.dataframe(summary_promo.style.format("{:.1f}"), use_container_width=True)
+                    if not df_filtered.empty:
+                        # We cannot sum raw data per user (no user correlation).
+                        # We sum the Statistics (Mean, Median, Q1, Q3) of each tier.
+                        # This approximates the "Typical Path".
+                        
+                        grouped = df_filtered.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
+                        # Reindex to ensure order and fill missing with 0
+                        grouped = grouped.reindex(intermediate_tiers).fillna(0)
+                        
+                        # Sum statistics
+                        # Note: Sum of medians != Median of sums in general distributions, 
+                        # but for "Expected Duration" estimation, summing typical durations of each stage is the standard approach.
+                        
+                        total_stats = grouped[["mean", "25%", "50%", "75%"]].sum()
+                        
+                        # Display Cumulative Result
+                        st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
+                        
+                        res_col1, res_col2, res_col3, res_col4 = st.columns(4)
+                        res_col1.metric("Top 25% (Fast Path)", f"{total_stats['25%']:.0f} Matches")
+                        res_col2.metric("Median (Standard)", f"{total_stats['50%']:.0f} Matches")
+                        res_col3.metric("Bottom 25% (Slow Path)", f"{total_stats['75%']:.0f} Matches")
+                        res_col4.metric("Mean (Average)", f"{total_stats['mean']:.0f} Matches")
+                        
+                        st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
+                        
+                        # Optional: Show breakdown table
+                        with st.expander("구간별 상세 데이터 (Breakdown)", expanded=False):
+                             display_df = grouped[["count", "25%", "50%", "75%", "mean"]].rename(columns={
+                                "25%": "matches (Fast)", "50%": "matches (Median)", "75%": "matches (Slow)", "mean": "matches (Avg)"
+                             })
+                             st.dataframe(display_df.style.format("{:.1f}"), use_container_width=True)
+                             
+                    else:
+                        st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
                 
             else:
                 st.info("아직 승급 데이터가 충분하지 않습니다.")
