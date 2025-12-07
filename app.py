@@ -2109,25 +2109,9 @@ else:
             
             # Re-enabled with try-except for robustness
             try:
-                promo_durations = []
-                
-                # Use aggregated global stats instead of sample logs
-                if hasattr(sim, 'promotion_durations'):
-                    if sim.promotion_durations:
-                        for t_name, durations in sim.promotion_durations.items():
-                            if not durations: continue
-                            
-                            for d in durations:
-                                promo_durations.append({
-                                    "From Tier": t_name,
-                                    "Matches Needed": d,
-                                })
-                elif sim.match_logs: 
-                     st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
-
-                if promo_durations:
-                    df_promo = pd.DataFrame(promo_durations)
-                    
+                if not hasattr(sim, 'tier_configs'):
+                    st.warning("티어 설정이 없어서 분석할 수 없습니다.")
+                else:
                     # Order tiers logic
                     tier_order = [t.name for t in sim.tier_configs] # Ensure ordering matches config
                     
@@ -2164,39 +2148,78 @@ else:
                                 target_idx = tier_order.index(target_tier_sel)
                                 intermediate_tiers = tier_order[start_idx : target_idx]
                                 
-                                df_filtered = df_promo[df_promo["From Tier"].isin(intermediate_tiers)]
-                                
-                                if not df_filtered.empty:
-                                    grouped = df_filtered.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
-                                    # Reindex to ensure order and fill missing with 0 (for steps with no data)
-                                    grouped = grouped.reindex(intermediate_tiers).fillna(0)
+                                if hasattr(sim, 'promotion_durations') and sim.promotion_durations:
+                                    # Optimized: Calculate stats PER TIER directly without huge DataFrame
+                                    tier_stats = {}
                                     
-                                    # Sum statistics
-                                    total_stats = grouped[["mean", "25%", "50%", "75%"]].sum()
+                                    for t_name in intermediate_tiers:
+                                        durations = sim.promotion_durations.get(t_name, [])
+                                        if durations:
+                                            arr = np.array(durations)
+                                            tier_stats[t_name] = {
+                                                "count": len(arr),
+                                                "mean": np.mean(arr),
+                                                "25%": np.percentile(arr, 25),
+                                                "50%": np.median(arr),
+                                                "75%": np.percentile(arr, 75)
+                                            }
+                                        else:
+                                             tier_stats[t_name] = {
+                                                "count": 0, "mean": 0, "25%": 0, "50%": 0, "75%": 0
+                                             }
                                     
-                                    # Display Cumulative Result
-                                    st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
+                                    # Aggregate Stats
+                                    total_mean = 0
+                                    total_25 = 0
+                                    total_50 = 0
+                                    total_75 = 0
+                                    valid_tiers_count = 0
                                     
-                                    res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-                                    res_col1.metric("Top 25% (Fast Path)", f"{total_stats['25%']:.0f} Matches")
-                                    res_col2.metric("Median (Standard)", f"{total_stats['50%']:.0f} Matches")
-                                    res_col3.metric("Bottom 25% (Slow Path)", f"{total_stats['75%']:.0f} Matches")
-                                    res_col4.metric("Mean (Average)", f"{total_stats['mean']:.0f} Matches")
+                                    for t_name in intermediate_tiers:
+                                        stats = tier_stats.get(t_name)
+                                        if stats and stats["count"] > 0:
+                                            total_mean += stats["mean"]
+                                            total_25 += stats["25%"]
+                                            total_50 += stats["50%"]
+                                            total_75 += stats["75%"]
+                                            valid_tiers_count += 1
                                     
-                                    st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
-                                    
-                                    with st.expander("구간별 상세 데이터 (Breakdown)", expanded=False):
-                                        display_df = grouped[["count", "25%", "50%", "75%", "mean"]].rename(columns={
-                                            "25%": "matches (Fast)", "50%": "matches (Median)", "75%": "matches (Slow)", "mean": "matches (Avg)"
-                                        })
-                                        st.dataframe(display_df.style.format("{:.1f}"))
-                                         
+                                    if valid_tiers_count > 0:
+                                        # Display Cumulative Result
+                                        st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
+                                        
+                                        res_col1, res_col2, res_col3, res_col4 = st.columns(4)
+                                        res_col1.metric("Top 25% (Fast Path)", f"{total_25:.0f} Matches")
+                                        res_col2.metric("Median (Standard)", f"{total_50:.0f} Matches")
+                                        res_col3.metric("Bottom 25% (Slow Path)", f"{total_75:.0f} Matches")
+                                        res_col4.metric("Mean (Average)", f"{total_mean:.0f} Matches")
+                                        
+                                        st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
+                                        
+                                        with st.expander("구간별 상세 데이터 (Breakdown)", expanded=False):
+                                            # Convert dict to DataFrame for display
+                                            breakdown_data = []
+                                            for t_name in intermediate_tiers:
+                                                s = tier_stats[t_name]
+                                                breakdown_data.append({
+                                                    "Tier": t_name,
+                                                    "count": s["count"],
+                                                    "matches (Fast)": s["25%"],
+                                                    "matches (Median)": s["50%"],
+                                                    "matches (Slow)": s["75%"],
+                                                    "matches (Avg)": s["mean"]
+                                                })
+                                            
+                                            df_breakdown = pd.DataFrame(breakdown_data).set_index("Tier")
+                                            st.dataframe(df_breakdown.style.format("{:.1f}"))
+                                    else:
+                                        st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
+
                                 else:
-                                    st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
+                                     st.info("아직 승급 데이터가 없습니다.")
+
                             except Exception as e:
                                 st.error(f"분석 중 오류 발생: {e}")
-                else:
-                    st.info("아직 승급 데이터가 충분하지 않습니다.")
             except Exception as e:
                 st.error(f"분석 로직 처리 중 오류가 발생했습니다: {e}")
 
