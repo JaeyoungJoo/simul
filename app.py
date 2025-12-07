@@ -932,7 +932,7 @@ else:
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
                 
             try:
-                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", use_container_width=True, key="streak_editor")
+                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", key="streak_editor")
                 
                 # Bulk Input
                 streak_map = {"연승 횟수": "min_streak", "보너스 점수": "bonus", "min_streak": "min_streak", "bonus": "bonus"} # Self-map included
@@ -959,7 +959,7 @@ else:
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
                 
             try:
-                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", use_container_width=True, key="gd_editor")
+                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", key="gd_editor")
                 
                 # Bulk Input
                 gd_map = {"골 득실차": "min_diff", "보너스 점수": "bonus", "min_diff": "min_diff", "bonus": "bonus"}
@@ -1243,7 +1243,7 @@ else:
                         if col in df_segments.columns:
                             df_segments[col] = df_segments[col].astype(float)
                             
-                edited_segments = st.data_editor(df_segments, num_rows="dynamic", use_container_width=True, key="segment_editor")
+                edited_segments = st.data_editor(df_segments, num_rows="dynamic", key="segment_editor")
             except Exception as e:
                 st.error(f"세그먼트 표시 오류: {e}")
                 edited_segments = pd.DataFrame() # Fallback
@@ -1500,7 +1500,7 @@ else:
                 m3.metric("활성 유저", f"{sim.num_users:,}")
                 
                 fig = px.histogram(x=sim.mmr, nbins=50, title="최종 MMR 분포", labels={'x': 'MMR', 'y': 'Count'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig)
 
     with tab2:
         st.subheader("시뮬레이션 분석")
@@ -1525,7 +1525,7 @@ else:
                 fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['avg_mmr'], name='평균 MMR'))
                 fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['min_mmr'], name='최소 MMR'))
                 fig_trends.add_trace(go.Scatter(x=df_stats['day'], y=df_stats['max_mmr'], name='최대 MMR'))
-                st.plotly_chart(fig_trends, use_container_width=True)
+                st.plotly_chart(fig_trends)
                 
                 # Tier Distribution
                 st.markdown("### 티어 분포")
@@ -1567,7 +1567,7 @@ else:
                     
                     tier_df = pd.DataFrame(final_data)
                     fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수 (현재)")
-                    st.plotly_chart(fig_tier, use_container_width=True)
+                    st.plotly_chart(fig_tier)
                 else:
                     # Fallback to MMR ranges if no tier config (Legacy)
                     raw_tiers = st.session_state.tier_config
@@ -1590,7 +1590,7 @@ else:
                 
                     tier_df = pd.DataFrame(list(tier_counts.items()), columns=["Tier", "Count"])
                     fig_tier = px.bar(tier_df, x="Tier", y="Count", title="티어별 유저 수 (MMR 기준)")
-                    st.plotly_chart(fig_tier, use_container_width=True)
+                    st.plotly_chart(fig_tier)
 
                 # Segment Performance Analysis
                 st.markdown("### 세그먼트 성과 분석 (Segment Performance)")
@@ -1619,7 +1619,7 @@ else:
                         st.markdown("**세그먼트별 MMR 분포**")
                         fig_box = px.box(filtered_df, x="Segment", y="MMR", color="Segment", 
                                          title="MMR Distribution by Segment")
-                        st.plotly_chart(fig_box, use_container_width=True)
+                        st.plotly_chart(fig_box)
                         
                         
                     with col_b:
@@ -1636,7 +1636,7 @@ else:
                         fig_scatter.add_shape(type="line", line=dict(dash="dash", color="gray"),
                             x0=plot_df["True Skill"].min(), y0=plot_df["True Skill"].min(),
                             x1=plot_df["True Skill"].max(), y1=plot_df["True Skill"].max())
-                        st.plotly_chart(fig_scatter, use_container_width=True)
+                        st.plotly_chart(fig_scatter)
                 else:
                     st.warning("분석할 세그먼트를 선택하세요.")
             
@@ -1726,7 +1726,7 @@ else:
                         cols += [c for c in df_logs.columns if c not in cols]
                         df_logs = df_logs[cols]
                         
-                        st.dataframe(df_logs, use_container_width=True)
+                        st.dataframe(df_logs)
                     else:
                         st.info("매치 기록이 없습니다.")
 
@@ -1790,7 +1790,7 @@ else:
                             }
                             
                             df_stats = pd.DataFrame(stats_data)
-                            st.dataframe(df_stats, use_container_width=True)
+                            st.dataframe(df_stats)
                         else:
                             st.warning("선택된 세그먼트에 속한 유저가 없습니다.")
                     
@@ -1832,7 +1832,7 @@ else:
                                 })
                                 df_patterns["Percentage"] = df_patterns["Percentage"].apply(lambda x: f"{x}%")
                                 
-                                st.dataframe(df_patterns, use_container_width=True)
+                                st.dataframe(df_patterns)
                             else:
                                 st.info("초반 3경기를 완료한 유저가 없습니다.")
                         else:
@@ -1898,7 +1898,7 @@ else:
                                 )
                             )
                         
-                        st.plotly_chart(fig_history, use_container_width=True)
+                        st.plotly_chart(fig_history)
                     else:
                         st.info("표시할 이력 데이터가 없습니다.")
             else:
@@ -1929,7 +1929,7 @@ else:
                 df_trans = pd.DataFrame(prom_data + dem_data)
                 if not df_trans.empty:
                     fig_trans = px.bar(df_trans, x="Tier", y="Count", color="Type", barmode="group", title="티어별 승급/강등 횟수")
-                    st.plotly_chart(fig_trans, use_container_width=True)
+                    st.plotly_chart(fig_trans)
                 else:
                     st.info("아직 승급/강등 데이터가 없습니다.")
             
@@ -1960,7 +1960,7 @@ else:
                         "Total Demotions (In)": dems
                     })
                     
-                st.dataframe(pd.DataFrame(rates), use_container_width=True)
+                st.dataframe(pd.DataFrame(rates))
                 
         else:
             st.info("랭크 분석을 보려면 시뮬레이션을 실행하고 티어 설정을 완료하세요.")
@@ -2037,7 +2037,7 @@ else:
                 fig_div = px.bar(df_plot, x="Tier", y="Gap", color="Type", barmode="group",
                                  title="티어별 적정 실력 괴리도 분석 (Target vs Actual)",
                                  labels={"Gap": "Difference (Actual - Target)"})
-                st.plotly_chart(fig_div, use_container_width=True)
+                st.plotly_chart(fig_div)
 
             st.divider()
             st.markdown("#### 티어 내 상/하위 25% MMR 격차 분석")
@@ -2075,7 +2075,7 @@ else:
                                         text_auto='.1f',
                                         color="MMR Spread (Top - Bottom 25%)",
                                         color_continuous_scale="Viridis")
-                    st.plotly_chart(fig_spread, use_container_width=True)
+                    st.plotly_chart(fig_spread)
                 else:
                     st.info("데이터가 부족하여 격차 분석을 표시할 수 없습니다.")
             except Exception as e:
@@ -2167,7 +2167,7 @@ else:
                                         display_df = grouped[["count", "25%", "50%", "75%", "mean"]].rename(columns={
                                             "25%": "matches (Fast)", "50%": "matches (Median)", "75%": "matches (Slow)", "mean": "matches (Avg)"
                                         })
-                                        st.dataframe(display_df.style.format("{:.1f}"), use_container_width=True)
+                                        st.dataframe(display_df.style.format("{:.1f}"))
                                          
                                 else:
                                     st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
