@@ -1644,7 +1644,21 @@ else:
             # Get all configured segments (Use sim.seg_names to show all registered segments, not just those with watched users)
             available_segments = list(sim.seg_names)
             
-            selected_segments_multi = st.multiselect("확인할 세그먼트 선택 (다중 선택 가능)", available_segments, default=available_segments[:1] if available_segments else None)
+            # Determine default selection: The segment with the most users
+            default_segments = available_segments[:1] if available_segments else None
+            try:
+                if hasattr(sim, 'segment_indices') and len(sim.segment_indices) > 0:
+                    # Count users per segment index
+                    seg_counts = np.bincount(sim.segment_indices, minlength=len(sim.seg_names))
+                    most_pop_idx = np.argmax(seg_counts)
+                    if most_pop_idx < len(sim.seg_names):
+                        most_pop_name = sim.seg_names[most_pop_idx]
+                        if most_pop_name in available_segments:
+                            default_segments = [most_pop_name]
+            except Exception:
+                pass # Fallback to first segment if calculation fails
+
+            selected_segments_multi = st.multiselect("확인할 세그먼트 선택 (다중 선택 가능)", available_segments, default=default_segments)
             
             if selected_segments_multi:
                 # Find all sample users belonging to selected segments
