@@ -2096,35 +2096,61 @@ else:
                 # Order tiers logic
                 tier_order = [t.name for t in sim.tier_configs]
                 
+                # Tier Filter (Range Slider)
+                if len(tier_order) > 1:
+                    start_tier, end_tier = st.select_slider(
+                        "분석할 티어 범위 선택 (From Tier)",
+                        options=tier_order,
+                        value=(tier_order[0], tier_order[-1])
+                    )
+                    
+                    # Slicing logic
+                    try:
+                        start_idx = tier_order.index(start_tier)
+                        end_idx = tier_order.index(end_tier)
+                        # Ensure correct order if user dragged backwards (though select_slider handles this usually)
+                        if start_idx > end_idx: start_idx, end_idx = end_idx, start_idx
+                        
+                        selected_tiers = tier_order[start_idx : end_idx+1]
+                        df_promo = df_promo[df_promo["From Tier"].isin(selected_tiers)]
+                    except ValueError:
+                        pass # Should not happen
+
                 # Sample Down if too huge? 
                 # Boxplot handles lots of points, but if > 100k points, might be slow.
                 # Plotly box plot is generally fine for < 100k. 
                 # If too slow, we can sample.
                 if len(df_promo) > 10000:
                     df_promo_plot = df_promo.sample(10000)
-                    st.caption(f"데이터가 많아 10,000건을 랜덤 샘플링하여 표시합니다. (전체 승급 건수: {len(df_promo):,})")
+                    st.caption(f"데이터가 많아 10,000건을 랜덤 샘플링하여 표시합니다. (선택된 범위 승급 건수: {len(df_promo):,})")
                 else:
                     df_promo_plot = df_promo
-
-                fig_promo = px.box(df_promo_plot, x="From Tier", y="Matches Needed", 
-                                   title="티어별 승급 소요 매치 분포 (Lower is Faster)",
-                                   # points="all", # Too many points now
-                                   category_orders={"From Tier": tier_order},
-                                   color="From Tier")
                 
-                st.plotly_chart(fig_promo, use_container_width=True)
-                
-                # Calculate Summary Table (Q1, Median, Q3) - Use FULL data
-                summary_promo = df_promo.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
-                # Filter relevant columns
-                summary_promo = summary_promo[["count", "25%", "50%", "75%", "mean"]]
-                summary_promo = summary_promo.rename(columns={
-                    "25%": "Top 25% (Fast)", 
-                    "50%": "Median", 
-                    "75%": "Bottom 25% (Slow)",
-                    "mean": "Mean"
-                })
-                st.dataframe(summary_promo.style.format("{:.1f}"), use_container_width=True)
+                if df_promo_plot.empty:
+                    st.warning("선택한 범위에 승급 데이터가 없습니다.")
+                else:
+                    fig_promo = px.box(df_promo_plot, x="From Tier", y="Matches Needed", 
+                                    title=f"티어별 승급 소요 매치 분포 ({start_tier} ~ {end_tier})",
+                                    # points="all", # Too many points now
+                                    category_orders={"From Tier": tier_order}, # Keep global order ensuring consistency
+                                    color="From Tier")
+                    
+                    st.plotly_chart(fig_promo, use_container_width=True)
+                    
+                    # Calculate Summary Table (Q1, Median, Q3) - Use FULL filtered data
+                    summary_promo = df_promo.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
+                    # Sort index by tier order
+                    summary_promo = summary_promo.reindex(selected_tiers).dropna()
+                    
+                    # Filter relevant columns
+                    summary_promo = summary_promo[["count", "25%", "50%", "75%", "mean"]]
+                    summary_promo = summary_promo.rename(columns={
+                        "25%": "Top 25% (Fast)", 
+                        "50%": "Median", 
+                        "75%": "Bottom 25% (Slow)",
+                        "mean": "Mean"
+                    })
+                    st.dataframe(summary_promo.style.format("{:.1f}"), use_container_width=True)
                 
             else:
                 st.info("아직 승급 데이터가 충분하지 않습니다.")
