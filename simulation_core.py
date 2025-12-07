@@ -336,9 +336,10 @@ class FastSimulation:
              if tier_mask.any():
                  self.user_demotion_lives[tier_mask] = t_config.demotion_lives
 
-    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b):
+    def _process_tier_updates(self, idx_a, idx_b, win_a, draw, loss_a, mmr_change_a, mmr_change_b, pre_mmr_a, pre_mmr_b):
         # print("DEBUG: _process_tier_updates CALLED")
-        all_idx = np.concatenate([idx_a, idx_b])
+        # all_idx = np.concatenate([idx_a, idx_b]) # Unused?
+        
         res_a = np.zeros(len(idx_a), dtype=int)
         res_a[win_a] = 1
         res_a[loss_a] = -1
@@ -351,11 +352,15 @@ class FastSimulation:
         # win_a has indices of A who won.
         # res_a is full size of A batch (-1, 0, 1)
         results_a = res_a
-        results_b = -results_a
+        results_b = -results_a # Wait. if res_a=1 (Win), res_b=-1 (Loss). logic holds.
+        # But explicitly constructed res_b is safer if draw handling differs.
+        # Actually res_b above handles draws (0).
+        # Let's use res_b explicit.
         
         # Batch update logic helper
-        self._update_single_batch(idx_a, results_a, self.mmr[idx_a])
-        self._update_single_batch(idx_b, results_b, self.mmr[idx_b])
+        # USE PRE-MATCH MMRs (Passed from snapshot) to ensure demotion fairness
+        self._update_single_batch(idx_a, res_a, pre_mmr_a)
+        self._update_single_batch(idx_b, res_b, pre_mmr_b)
 
     def _update_single_batch(self, indices, results, current_mmrs):
         # Snapshot current stats to prevent "Ladder Cascading" (promoting multiple times in one loop)
@@ -851,7 +856,7 @@ class FastSimulation:
         draw_indices = np.where(draw_mask)[0]
         loss_indices = np.where(loss_mask)[0]
         
-        self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b)
+        self._process_tier_updates(idx_a, idx_b, win_indices, draw_indices, loss_indices, delta_a, delta_b, mmr_a, mmr_b)
         
         # 5b. Check Placement Completion & Assign Tier
         # Run AFTER tier updates so that the 10th match itself doesn't trigger ladder points logic instantly (or double count).
