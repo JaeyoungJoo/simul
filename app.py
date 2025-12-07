@@ -1097,9 +1097,9 @@ else:
                     column_config={
                         "name": st.column_config.TextColumn("티어 이름", required=True),
                         "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio", "ELO"], required=True),
-                        "min_mmr": st.column_config.NumberColumn("최소 MMR", step=10),
-                        "max_mmr": st.column_config.NumberColumn("최대 MMR", step=10),
-                        "demotion_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=10, help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
+                        "min_mmr": st.column_config.NumberColumn("최소 MMR", step=0.1, format="%.1f", required=True),
+                        "max_mmr": st.column_config.NumberColumn("최대 MMR", step=0.1, format="%.1f", required=True),
+                        "demotion_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=0.1, format="%.1f", help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
                         "demotion_lives": st.column_config.NumberColumn("강등 방어 횟수", step=1, help="강등 위험 상태에서 패배 시 차감되는 횟수 (0=강등 없음)"),
                         "loss_point_correction": st.column_config.NumberColumn("패배 포인트 보정", step=0.1, help="패배 시 포인트 감소량 보정 (예: 0.8 = 80%만 감소)"),
                         "points_win": st.column_config.NumberColumn("승리 포인트", step=1),
@@ -1113,8 +1113,8 @@ else:
                         "promotion_mmr_4": st.column_config.NumberColumn("승점 4배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 4배"),
                         "promotion_mmr_5": st.column_config.NumberColumn("승점 5배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 5배"),
                         "capacity": st.column_config.NumberColumn("정원 (Ratio)", step=1),
-                        "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=10),
-                        "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=10),
+                        "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=10, format="%.1f"),
+                        "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=10, format="%.1f"),
                         "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치"),
                         "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)"),
                         "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)")
