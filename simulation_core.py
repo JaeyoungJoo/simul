@@ -275,6 +275,7 @@ class FastSimulation:
         # rules: [{'min_mmr': 0, 'max_mmr': 1000, 'reset_mmr': 800, 'soft_reset_ratio': 0.5}, ...]
         watched_set = set(self.watched_indices.keys())
         original_mmrs = self.mmr.copy() # Snapshot to prevent chaining
+        processed_mask = np.zeros(len(self.mmr), dtype=bool) # Track usage to prevent overlap
         
         for rule in rules:
              # Handle keys (schema compatibility)
@@ -283,9 +284,12 @@ class FastSimulation:
              target = rule.get('reset_mmr', rule.get('target', 1000))
              comp = rule.get('soft_reset_ratio', rule.get('compression', 1.0))
              
-             # Use snapshot for masking
-             mask = (original_mmrs >= r_min) & (original_mmrs < r_max)
+             # Use snapshot + Exclude already processed
+             mask = (original_mmrs >= r_min) & (original_mmrs < r_max) & (~processed_mask)
              if not mask.any(): continue
+             
+             # Mark as processed
+             processed_mask[mask] = True
              
              # Calculate new MMRs
              old_mmrs = self.mmr[mask].copy()
