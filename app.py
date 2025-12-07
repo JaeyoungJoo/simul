@@ -1113,8 +1113,8 @@ else:
                         "promotion_mmr_4": st.column_config.NumberColumn("승점 4배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 4배"),
                         "promotion_mmr_5": st.column_config.NumberColumn("승점 5배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 5배"),
                         "capacity": st.column_config.NumberColumn("정원 (Ratio)", step=1),
-                        "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=10, format="%.1f"),
-                        "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=10, format="%.1f"),
+                        "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=0.1, format="%.1f"),
+                        "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=0.1, format="%.1f"),
                         "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치"),
                         "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)"),
                         "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)")
