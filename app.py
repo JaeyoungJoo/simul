@@ -1504,6 +1504,15 @@ else:
 
     with tab2:
         st.subheader("시뮬레이션 분석")
+        # Compatibility Patch for legacy simulation objects
+        if st.session_state.simulation:
+             import collections
+             # Check and initialize missing attributes if they don't exist
+             if not hasattr(st.session_state.simulation, 'matches_in_current_tier'):
+                  st.session_state.simulation.matches_in_current_tier = np.zeros(st.session_state.simulation.num_users, dtype=int)
+             if not hasattr(st.session_state.simulation, 'promotion_durations'):
+                  st.session_state.simulation.promotion_durations = collections.defaultdict(list)
+
         if st.session_state.simulation and 'stats_history' in st.session_state:
             stats_history = st.session_state.stats_history
             
@@ -2033,49 +2042,141 @@ else:
             st.divider()
             st.markdown("#### 티어 내 상/하위 25% MMR 격차 분석")
             
-            spread_data = []
-            for i, config in enumerate(sim.tier_configs):
-                indices = np.where(sim.user_tier_index == i)[0]
-                if len(indices) > 0:
-                    tier_mmrs = np.sort(sim.mmr[indices])
-                    n = len(tier_mmrs)
-                    
-                    # Prevent index errors for small N
-                    if n >= 4:
-                        # Top 25%
-                        top_start = int(n * 0.75)
-                        top_mean = np.mean(tier_mmrs[top_start:])
+            try:
+                spread_data = []
+                for i, config in enumerate(sim.tier_configs):
+                    indices = np.where(sim.user_tier_index == i)[0]
+                    if len(indices) > 0:
+                        tier_mmrs = np.sort(sim.mmr[indices])
+                        n = len(tier_mmrs)
                         
-                        # Bottom 25%
-                        bot_end = int(n * 0.25)
-                        if bot_end == 0: bot_end = 1 # Safety
-                        bot_mean = np.mean(tier_mmrs[:bot_end])
+                        # Prevent index errors for small N
+                        if n >= 4:
+                            # Top 25%
+                            top_start = int(n * 0.75)
+                            top_mean = np.mean(tier_mmrs[top_start:])
+                            
+                            # Bottom 25%
+                            bot_end = int(n * 0.25)
+                            if bot_end == 0: bot_end = 1 # Safety
+                            bot_mean = np.mean(tier_mmrs[:bot_end])
+                            
+                            spread = top_mean - bot_mean
+                        else:
+                            # If very few users, just spread = Max - Min
+                            spread = tier_mmrs[-1] - tier_mmrs[0]
                         
-                        spread = top_mean - bot_mean
-                    else:
-                        # If very few users, just spread = Max - Min
-                        spread = tier_mmrs[-1] - tier_mmrs[0]
-                    
-                    spread_data.append({"Tier": config.name, "MMR Spread (Top - Bottom 25%)": spread})
-            
-            if spread_data:
-                df_spread = pd.DataFrame(spread_data)
-                fig_spread = px.bar(df_spread, x="Tier", y="MMR Spread (Top - Bottom 25%)", 
-                                    title="티어별 상위 25% vs 하위 25% 평균 MMR 격차",
-                                    text_auto='.1f',
-                                    color="MMR Spread (Top - Bottom 25%)",
-                                    color_continuous_scale="Viridis")
-                st.plotly_chart(fig_spread, use_container_width=True)
-            else:
-                st.info("데이터가 부족하여 격차 분석을 표시할 수 없습니다.")
+                        spread_data.append({"Tier": config.name, "MMR Spread (Top - Bottom 25%)": spread})
+                
+                if spread_data:
+                    df_spread = pd.DataFrame(spread_data)
+                    fig_spread = px.bar(df_spread, x="Tier", y="MMR Spread (Top - Bottom 25%)", 
+                                        title="티어별 상위 25% vs 하위 25% 평균 MMR 격차",
+                                        text_auto='.1f',
+                                        color="MMR Spread (Top - Bottom 25%)",
+                                        color_continuous_scale="Viridis")
+                    st.plotly_chart(fig_spread, use_container_width=True)
+                else:
+                    st.info("데이터가 부족하여 격차 분석을 표시할 수 없습니다.")
+            except Exception as e:
+                st.error(f"격차 분석 중 오류 발생: {e}")
             
             st.divider()
             st.markdown("#### 승급 소요 매치 수 분석 (Promotion Speed)")
             st.caption("각 티어에서 상위 티어로 승급하기까지 걸린 매치 수 분포 (전체 유저 대상)")
             
-            st.warning("분석 기능을 일시적으로 비활성화했습니다. (오류 원인 파악 중)")
-            # DEBUG: Previous code block caused unresolved 'Oh no' crash.
-            # Verifying if this restores stability.
+            # Re-enabled with try-except for robustness
+            try:
+                promo_durations = []
+                
+                # Use aggregated global stats instead of sample logs
+                if hasattr(sim, 'promotion_durations'):
+                    if sim.promotion_durations:
+                        for t_name, durations in sim.promotion_durations.items():
+                            if not durations: continue
+                            
+                            for d in durations:
+                                promo_durations.append({
+                                    "From Tier": t_name,
+                                    "Matches Needed": d,
+                                })
+                elif sim.match_logs: 
+                     st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
+
+                if promo_durations:
+                    df_promo = pd.DataFrame(promo_durations)
+                    
+                    # Order tiers logic
+                    tier_order = [t.name for t in sim.tier_configs] # Ensure ordering matches config
+                    
+                    if len(tier_order) < 2:
+                        st.warning("승급 분석을 위해서는 최소 2개 이상의 티어가 필요합니다.")
+                    else:
+                        st.markdown("##### 구간 누적 승급 소요 매치 (Cumulative Matches)")
+                        match_col1, match_col2 = st.columns(2)
+                        
+                        # Safe Indexing
+                        start_opts = tier_order[:-1]
+                        with match_col1:
+                            start_tier_sel = st.selectbox("시작 티어 (Start)", options=start_opts, index=0)
+                        
+                        with match_col2:
+                            # Target should be higher than start
+                            try:
+                                start_idx = tier_order.index(start_tier_sel)
+                                target_opts = tier_order[start_idx+1:]
+                                
+                                if target_opts:
+                                    target_tier_sel = st.selectbox("목표 티어 (Target)", options=target_opts, index=0)
+                                else:
+                                    target_tier_sel = None
+                                    st.warning("더 높은 티어가 없습니다.")
+                            except ValueError:
+                                # Fallback if tier mismatch occurs
+                                target_tier_sel = None
+                                st.warning("티어 설정이 변경되어 선택할 수 없습니다.")
+                        
+                        if target_tier_sel:
+                            try:
+                                # Identify tiers to aggregate (From Start up to Target-1)
+                                target_idx = tier_order.index(target_tier_sel)
+                                intermediate_tiers = tier_order[start_idx : target_idx]
+                                
+                                df_filtered = df_promo[df_promo["From Tier"].isin(intermediate_tiers)]
+                                
+                                if not df_filtered.empty:
+                                    grouped = df_filtered.groupby("From Tier")["Matches Needed"].describe(percentiles=[.25, .5, .75])
+                                    # Reindex to ensure order and fill missing with 0 (for steps with no data)
+                                    grouped = grouped.reindex(intermediate_tiers).fillna(0)
+                                    
+                                    # Sum statistics
+                                    total_stats = grouped[["mean", "25%", "50%", "75%"]].sum()
+                                    
+                                    # Display Cumulative Result
+                                    st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
+                                    
+                                    res_col1, res_col2, res_col3, res_col4 = st.columns(4)
+                                    res_col1.metric("Top 25% (Fast Path)", f"{total_stats['25%']:.0f} Matches")
+                                    res_col2.metric("Median (Standard)", f"{total_stats['50%']:.0f} Matches")
+                                    res_col3.metric("Bottom 25% (Slow Path)", f"{total_stats['75%']:.0f} Matches")
+                                    res_col4.metric("Mean (Average)", f"{total_stats['mean']:.0f} Matches")
+                                    
+                                    st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
+                                    
+                                    with st.expander("구간별 상세 데이터 (Breakdown)", expanded=False):
+                                        display_df = grouped[["count", "25%", "50%", "75%", "mean"]].rename(columns={
+                                            "25%": "matches (Fast)", "50%": "matches (Median)", "75%": "matches (Slow)", "mean": "matches (Avg)"
+                                        })
+                                        st.dataframe(display_df.style.format("{:.1f}"), use_container_width=True)
+                                         
+                                else:
+                                    st.warning("선택한 구간에 대한 승급 데이터가 부족합니다.")
+                            except Exception as e:
+                                st.error(f"분석 중 오류 발생: {e}")
+                else:
+                    st.info("아직 승급 데이터가 충분하지 않습니다.")
+            except Exception as e:
+                st.error(f"분석 로직 처리 중 오류가 발생했습니다: {e}")
 
     # --- Comments Section ---
     st.divider()
