@@ -576,8 +576,12 @@ if "authenticated" not in st.session_state:
 # Check Cookies for Persistence
 # Only check if not authenticated AND not just logged out
 if not st.session_state["authenticated"] and not st.session_state.get("logged_out"):
-    auth_user = cookie_manager.get("auth_user")
-    last_activity = cookie_manager.get("last_activity")
+    try:
+        auth_user = cookie_manager.get("auth_user")
+        last_activity = cookie_manager.get("last_activity")
+    except Exception:
+        auth_user = None
+        last_activity = None
     
     if st.session_state.get("is_admin", False):
         st.write(f"Debug: Cookie Check - User={auth_user}, LastAct={last_activity}")
@@ -932,7 +936,10 @@ else:
                 st.session_state.streak_rules = pd.DataFrame(columns=["min_streak", "bonus"])
                 
             try:
-                st.session_state.streak_rules = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", key="streak_editor")
+                edited_streak = st.data_editor(st.session_state.streak_rules, num_rows="dynamic", key="streak_editor")
+                if st.button("연승 규칙 적용 (Apply)"):
+                    st.session_state.streak_rules = edited_streak
+                    st.rerun()
                 
                 # Bulk Input
                 streak_map = {"연승 횟수": "min_streak", "보너스 점수": "bonus", "min_streak": "min_streak", "bonus": "bonus"} # Self-map included
@@ -959,7 +966,10 @@ else:
                 st.session_state.goal_diff_rules = pd.DataFrame(columns=["min_diff", "bonus"])
                 
             try:
-                st.session_state.goal_diff_rules = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", key="gd_editor")
+                edited_gd = st.data_editor(st.session_state.goal_diff_rules, num_rows="dynamic", key="gd_editor")
+                if st.button("골 득실 규칙 적용 (Apply)"):
+                    st.session_state.goal_diff_rules = edited_gd
+                    st.rerun()
                 
                 # Bulk Input
                 gd_map = {"골 득실차": "min_diff", "보너스 점수": "bonus", "min_diff": "min_diff", "bonus": "bonus"}
