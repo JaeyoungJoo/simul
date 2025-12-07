@@ -1180,41 +1180,46 @@ else:
                 except Exception as e:
                     st.error(f"티어 CSV 적용 오류: {e}")
 
-            # Apply Manual Edits
-            if not edited_tiers.equals(df_tiers):
-                new_tiers = []
-                for index, row in edited_tiers.iterrows():
-                    try:
-                        t = safe_create_tier_config(
-                            name=str(row["name"]),
-                            type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]),
-                            min_mmr=float(row["min_mmr"]),
-                            max_mmr=float(row["max_mmr"]),
-                            demotion_mmr=float(row.get("demotion_mmr", 0)),
-                            demotion_lives=int(row.get("demotion_lives", 0)),
-                            loss_point_correction=float(row.get("loss_point_correction", 1.0)),
-                            points_win=int(row["points_win"]),
-                            points_draw=int(row["points_draw"]),
-                            points_loss=int(row.get("points_loss", 0)),
-                            promotion_points=int(row["promotion_points"]),
-                            promotion_points_low=int(row["promotion_points_low"]),
-                            promotion_points_high=int(row["promotion_points_high"]),
-                            promotion_mmr_2=float(row.get("promotion_mmr_2", 0)),
-                            promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
-                            promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
-                            promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
-                            capacity=int(row["capacity"]),
-                            placement_min_mmr=float(row.get("placement_min_mmr", 0)),
-                            placement_max_mmr=float(row.get("placement_max_mmr", 0)),
-                            bot_match_enabled=bool(row.get("bot_match_enabled", False)),
-                            bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
-                            bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
-                        )
-                        new_tiers.append(t)
-                    except Exception as e:
-                        # st.warning(f"티어 데이터 오류 (행 {index}): {e}")
-                        pass
-                st.session_state.tier_config = new_tiers
+            # Apply Manual Edits (Button)
+            if st.button("티어 설정 적용 (Apply Tier Config)"):
+                if not edited_tiers.equals(df_tiers):
+                    new_tiers = []
+                    for index, row in edited_tiers.iterrows():
+                        try:
+                            t = safe_create_tier_config(
+                                name=str(row["name"]),
+                                type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]),
+                                min_mmr=float(row["min_mmr"]),
+                                max_mmr=float(row["max_mmr"]),
+                                demotion_mmr=float(row.get("demotion_mmr", 0)),
+                                demotion_lives=int(row.get("demotion_lives", 0)),
+                                loss_point_correction=float(row.get("loss_point_correction", 1.0)),
+                                points_win=int(row["points_win"]),
+                                points_draw=int(row["points_draw"]),
+                                points_loss=int(row.get("points_loss", 0)),
+                                promotion_points=int(row["promotion_points"]),
+                                promotion_points_low=int(row["promotion_points_low"]),
+                                promotion_points_high=int(row["promotion_points_high"]),
+                                promotion_mmr_2=float(row.get("promotion_mmr_2", 0)),
+                                promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
+                                promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
+                                promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
+                                capacity=int(row["capacity"]),
+                                placement_min_mmr=float(row.get("placement_min_mmr", 0)),
+                                placement_max_mmr=float(row.get("placement_max_mmr", 0)),
+                                bot_match_enabled=bool(row.get("bot_match_enabled", False)),
+                                bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
+                                bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
+                            )
+                            new_tiers.append(t)
+                        except Exception as e:
+                            # st.warning(f"티어 데이터 오류 (행 {index}): {e}")
+                            pass
+                    st.session_state.tier_config = new_tiers
+                    st.success("티어 설정이 적용되었습니다.")
+                    st.rerun()
+                else:
+                    st.info("변경 사항이 없습니다.")
 
 
     with st.expander("유저 세그먼트 (티어/실력 분포)"):
@@ -1279,23 +1284,25 @@ else:
                 except Exception as e:
                     st.error(f"세그먼트 CSV 적용 오류: {e}")
 
-            new_segments = []
-            total_ratio = 0
-            if not edited_segments.empty:
-                for index, row in edited_segments.iterrows():
-                    try:
-                        s = SegmentConfig(
-                            row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
-                            float(row["matches_per_day_min"]), float(row["matches_per_day_max"]),
-                            float(row["true_skill_min"]), float(row["true_skill_max"]),
-                            int(row["active_hour_start"]), int(row["active_hour_end"])
-                        )
-                        new_segments.append(s)
-                        total_ratio += s.ratio
-                    except:
-                        pass
-                st.session_state.segments = new_segments
-            st.write(f"총 비율 합계: {total_ratio:.4f}")
+            if st.button("세그먼트 설정 적용 (Apply Segments)"):
+                new_segments = []
+                total_ratio = 0
+                if not edited_segments.empty:
+                    for index, row in edited_segments.iterrows():
+                        try:
+                            s = SegmentConfig(
+                                row["name"], float(row["ratio"]), float(row["daily_play_prob"]),
+                                float(row["matches_per_day_min"]), float(row["matches_per_day_max"]),
+                                float(row["true_skill_min"]), float(row["true_skill_max"]),
+                                int(row["active_hour_start"]), int(row["active_hour_end"])
+                            )
+                            new_segments.append(s)
+                            total_ratio += s.ratio
+                        except:
+                            pass
+                    st.session_state.segments = new_segments
+                    st.success(f"세그먼트 설정이 적용되었습니다. (총 비율: {total_ratio:.4f})")
+                    st.rerun()
 
     with st.expander("시즌 초기화 규칙 (Season End)"):
             if 'reset_rules' not in st.session_state:
@@ -1316,7 +1323,7 @@ else:
                  ])
                  
             try:
-                st.session_state.reset_rules = st.data_editor(
+                edited_reset_rules = st.data_editor(
                     st.session_state.reset_rules, 
                     num_rows="dynamic", 
                     key="reset_editor",
@@ -1327,6 +1334,11 @@ else:
                         "soft_reset_ratio": st.column_config.NumberColumn("압축 비율 (0=완전초기화)", required=True, min_value=0.0, max_value=1.0, step=0.1, help="0이면 목표 MMR로 완전 초기화, 1이면 현재 MMR 유지. 0.5면 중간값.")
                     }
                 )
+                
+                if st.button("초기화 규칙 적용 (Apply Reset Rules)"):
+                    st.session_state.reset_rules = edited_reset_rules
+                    st.success("초기화 규칙이 적용되었습니다.")
+                    st.rerun()
                 
                 # Bulk Input
                 reset_map = {
