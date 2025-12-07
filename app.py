@@ -1428,6 +1428,13 @@ else:
                      stats_history = st.session_state.stats_history
                 
                 st.write(f"Debug: Num days = {st.session_state.num_days}") # Debug
+                
+                # DEBUG: Check Tier Config for Semipro 3
+                if st.session_state.simulation:
+                    for t in st.session_state.simulation.tier_configs:
+                        if "세미프로" in t.name and "3" in t.name:
+                            st.error(f"DEBUG: Tier {t.name} | Type: {t.type} ({type(t.type)}) | WinPts: {t.points_win}")
+                            
                 for day in range(st.session_state.num_days):
                     sim.run_day()
                     # Collect daily stats for plotting
