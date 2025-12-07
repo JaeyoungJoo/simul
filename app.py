@@ -562,8 +562,8 @@ def logout():
     
     # Also try delete for good measure
     try:
-        cookie_manager.delete("auth_user")
-        cookie_manager.delete("last_activity")
+        cookie_manager.delete("auth_user", key="delete_auth_user_logout")
+        cookie_manager.delete("last_activity", key="delete_last_activity_logout")
     except:
         pass
         
@@ -593,8 +593,8 @@ if not st.session_state["authenticated"] and not st.session_state.get("logged_ou
             # 30 minutes = 1800 seconds
             if current_time - last_activity_time > 1800:
                 # Timeout
-                cookie_manager.delete("auth_user")
-                cookie_manager.delete("last_activity")
+                cookie_manager.delete("auth_user", key="delete_auth_user_timeout")
+                cookie_manager.delete("last_activity", key="delete_last_activity_timeout")
                 st.warning("30분 동안 활동이 없어 로그아웃 되었습니다.")
             else:
                 # Restore Session
@@ -760,8 +760,8 @@ else:
                     st.error(f"진단 중 오류 발생: {e}")
             
             if st.button("쿠키 강제 삭제 (Force Clear Cookies)", type="secondary"):
-                cookie_manager.delete("auth_user")
-                cookie_manager.delete("last_activity")
+                cookie_manager.delete("auth_user", key="delete_auth_user_force")
+                cookie_manager.delete("last_activity", key="delete_last_activity_force")
                 st.session_state.clear()
                 st.rerun()
                 
