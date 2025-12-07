@@ -1959,22 +1959,29 @@ else:
                 
                 if len(indices) > 0:
                     actual_median_ts = np.median(sim.true_skill[indices])
-                    actual_avg_ts = np.mean(sim.true_skill[indices])
-                    divergence = actual_median_ts - target_median
+                    actual_median_mmr = np.median(sim.mmr[indices])
+                    
+                    ts_divergence = actual_median_ts - target_median
+                    mmr_divergence = actual_median_mmr - target_median
+                    
                     user_count = len(indices)
                 else:
                     actual_median_ts = 0
-                    actual_avg_ts = 0
-                    divergence = 0
+                    actual_median_mmr = 0
+                    ts_divergence = 0
+                    mmr_divergence = 0
                     user_count = 0
                 
                 div_data.append({
                     "Tier": config.name,
-                    "Target Median MMR": f"{target_median:.0f}",
+                    "Target Median": f"{target_median:.0f}",
+                    "Actual Median MMR": f"{actual_median_mmr:.0f}",
                     "Actual Median TS": f"{actual_median_ts:.0f}",
-                    "Divergence": f"{divergence:+.0f}",
+                    "MMR Gap": f"{mmr_divergence:+.0f}",
+                    "TS Gap": f"{ts_divergence:+.0f}",
                     "User Count": user_count,
-                    "_divergence_val": divergence # For sorting/coloring if needed
+                    "_mmr_gap": mmr_divergence,
+                    "_ts_gap": ts_divergence
                 })
             
             df_div = pd.DataFrame(div_data)
@@ -1983,16 +1990,27 @@ else:
             st.dataframe(
                 df_div,
                 column_config={
-                    "_divergence_val": None # Hide helper column
+                    "_mmr_gap": None, # Hide helper columns
+                    "_ts_gap": None
                 },
                 use_container_width=True
             )
             
-            # Chart
-            fig_div = px.bar(df_div, x="Tier", y="_divergence_val", 
-                             title="티어별 실력 괴리도 (양수: 실력이 더 높음 / 음수: 실력이 더 낮음)",
-                             labels={"_divergence_val": "Divergence (True Skill - Target MMR)"})
-            st.plotly_chart(fig_div, use_container_width=True)
+            # Chart (Grouped Bar)
+            # We need to melt the dataframe for plotting
+            if not df_div.empty:
+                # Create a long-form DF for plotting
+                plot_data = []
+                for _, row in df_div.iterrows():
+                    plot_data.append({"Tier": row["Tier"], "Gap": row["_mmr_gap"], "Type": "Current MMR Gap"})
+                    plot_data.append({"Tier": row["Tier"], "Gap": row["_ts_gap"], "Type": "True Skill Gap"})
+                
+                df_plot = pd.DataFrame(plot_data)
+                
+                fig_div = px.bar(df_plot, x="Tier", y="Gap", color="Type", barmode="group",
+                                 title="티어별 적정 실력 괴리도 분석 (Target vs Actual)",
+                                 labels={"Gap": "Difference (Actual - Target)"})
+                st.plotly_chart(fig_div, use_container_width=True)
 
     # --- Comments Section ---
     st.divider()
