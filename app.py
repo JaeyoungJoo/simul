@@ -647,15 +647,15 @@ else:
     current_time = time.time()
     expires_at = datetime.datetime.now() + datetime.timedelta(days=1)
     
-    try:
-        last_activity_cookie = cookie_manager.get("last_activity")
-        if last_activity_cookie:
-            if current_time - float(last_activity_cookie) > 60:
-                 cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
-        else:
-             cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
-    except:
-        pass
+    # try:
+    #     last_activity_cookie = cookie_manager.get("last_activity")
+    #     if last_activity_cookie:
+    #         if current_time - float(last_activity_cookie) > 60:
+    #              cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+    #     else:
+    #          cookie_manager.set("last_activity", str(current_time), expires_at=expires_at)
+    # except:
+    #     pass
 
     # Sidebar Logout
     with st.sidebar:
