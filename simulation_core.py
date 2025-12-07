@@ -239,23 +239,6 @@ class FastSimulation:
         
         # Pre-calculate counts (optimization)
         current_counts = {}
-        for idx, t in enumerate(self.tier_configs):
-            if t.type == TierType.RATIO:
-                current_counts[idx] = np.count_nonzero(self.user_tier_index == idx)
-
-        for i in sorted_indices:
-            u_mmr = self.mmr[i]
-            assigned_idx = 0
-            
-            # Find highest matching placement tier
-            for idx, t in enumerate(self.tier_configs):
-                if t.placement_min_mmr <= u_mmr <= t.placement_max_mmr:
-                    assigned_idx = idx
-            
-            # Capacity Check (Downgrade if full)
-            while assigned_idx > 0:
-                t = self.tier_configs[assigned_idx]
-                if t.type == TierType.RATIO:
                     cur_cnt = current_counts.get(assigned_idx, 0)
                     if cur_cnt >= t.capacity:
                         assigned_idx -= 1
