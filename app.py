@@ -2076,16 +2076,17 @@ else:
             promo_durations = []
             
             # Use aggregated global stats instead of sample logs
-            if hasattr(sim, 'promotion_durations') and sim.promotion_durations:
-                for t_name, durations in sim.promotion_durations.items():
-                    if not durations: continue
-                    
-                    # Add to list for DataFrame
-                    for d in durations:
-                        promo_durations.append({
-                            "From Tier": t_name,
-                            "Matches Needed": d,
-                        })
+            if hasattr(sim, 'promotion_durations'):
+                if sim.promotion_durations:
+                    for t_name, durations in sim.promotion_durations.items():
+                        if not durations: continue
+                        
+                        # Add to list for DataFrame
+                        for d in durations:
+                            promo_durations.append({
+                                "From Tier": t_name,
+                                "Matches Needed": d,
+                            })
             elif sim.match_logs: # Fallback for legacy / active support if needed, but new logic is preferred
                  st.info("새로운 집계 로직이 적용된 시뮬레이션을 실행해야 전체 데이터를 볼 수 있습니다.")
 
