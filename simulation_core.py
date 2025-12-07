@@ -323,6 +323,7 @@ class FastSimulation:
         self.draws[:] = 0
         self.streak[:] = 0
         self.user_ladder_points[:] = 0
+        self.user_tier_index[:] = -1 # CORRECT: Force Unranked for new season placement
         # Reset lives to default based on current tier
         for t_idx, t_config in enumerate(self.tier_configs):
              tier_mask = self.user_tier_index == t_idx
