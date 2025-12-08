@@ -611,9 +611,13 @@ class FastSimulation:
         Handle tier updates for a batch of single users (e.g. Bot matches).
         results: 1 (Win), 0 (Draw), -1 (Loss)
         """
+        # Snapshot current tiers to prevent "Double Promotion" in one batch
+        # If we check self.user_tier_index inside loop, a promoted user (0->1) might be picked up again in loop 1.
+        original_tiers = self.user_tier_index[indices].copy()
+        
         for t_idx, config in enumerate(self.tier_configs):
-            # Mask for users in this tier within the batch
-            tier_mask = self.user_tier_index[indices] == t_idx
+            # Mask for users in this tier within the batch (Using SNAPSHOT)
+            tier_mask = original_tiers == t_idx
             
             if not tier_mask.any():
                 continue
