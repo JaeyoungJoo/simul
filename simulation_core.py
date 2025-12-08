@@ -133,8 +133,7 @@ class ELOConfig:
     placement_bonus: float = 4.0
     streak_rules: List[Dict] = field(default_factory=list)
     goal_diff_rules: List[Dict] = field(default_factory=list)
-    decay_et: float = 0.8
-    decay_pk: float = 0.6
+    win_type_decay: Dict[str, float] = field(default_factory=lambda: {'Regular': 1.0, 'Extra': 0.8, 'PK': 0.6})
     calibration_enabled: bool = False
     calibration_k_bonus: float = 2.0
     calibration_match_count: int = 10
@@ -159,9 +158,7 @@ class ELOSystem:
         expected_b = self.expected_score(user_b.current_mmr, user_a.current_mmr)
         
         # Decay logic
-        decay = 1.0
-        if result_type == "Extra": decay = self.config.decay_et
-        elif result_type == "PK": decay = self.config.decay_pk
+        decay = self.config.win_type_decay.get(result_type, 1.0)
         
         # Goal Diff Bonus (Simplified)
         gd_mult = 1.0 + (max(0, goal_diff - 1) * 0.1 * self.config.gd_bonus_weight)
