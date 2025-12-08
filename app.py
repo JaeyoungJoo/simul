@@ -837,7 +837,8 @@ else:
                                     loss_point_correction=t.get("loss_point_correction", 1.0),
                                     bot_match_enabled=t.get("bot_match_enabled", False),
                                     bot_trigger_goal_diff=t.get("bot_trigger_goal_diff", 99),
-                                    bot_trigger_loss_streak=t.get("bot_trigger_loss_streak", 99)
+                                    bot_trigger_loss_streak=t.get("bot_trigger_loss_streak", 99),
+                                    bot_trigger_mmr=t.get("bot_trigger_mmr", 0.0)
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
@@ -910,6 +911,11 @@ else:
             st.session_state.max_goal_diff = st.number_input("최대 골 득실", min_value=1, value=st.session_state.get("max_goal_diff", 5), help="경기에서 발생할 수 있는 최대 골 득실 차이입니다.")
             st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0), help="매칭 시 MMR 검색 범위의 표준편차입니다.")
             st.session_state.bot_win_rate = st.slider("봇 매치 승률 (Bot Win Rate)", 0.0, 1.0, st.session_state.get("bot_win_rate", 0.8), help="봇 매치 시 유저가 승리할 확률입니다.")
+
+            st.caption("배치고사 봇 매치 설정 (Placement Bot)")
+            # Use specific keys for session state binding
+            st.number_input("배치 봇 트리거 (MMR)", value=st.session_state.get("placement_bot_trigger_mmr", 0.0), help="배치 중 MMR이 이 값 미만이면 봇 매치 발동 (0=비활성)", key="placement_bot_trigger_mmr")
+            st.number_input("배치 봇 트리거 (패배 수)", value=st.session_state.get("placement_bot_trigger_loss_count", 0), help="배치 중 패배 횟수가 이 값 이상이면 봇 매치 발동 (0=비활성)", key="placement_bot_trigger_loss_count")
 
         with st.expander("ELO 설정 (ELO Configuration)"):
             st.session_state.base_k = st.number_input("기본 K-Factor", value=st.session_state.get("base_k", 20.0), help="ELO 점수 변동폭의 기본값입니다.")
@@ -1083,7 +1089,8 @@ else:
                         "placement_max_mmr": getattr(t, "placement_max_mmr", 0.0),
                         "bot_match_enabled": t.bot_match_enabled,
                         "bot_trigger_goal_diff": t.bot_trigger_goal_diff,
-                        "bot_trigger_loss_streak": t.bot_trigger_loss_streak
+                        "bot_trigger_loss_streak": t.bot_trigger_loss_streak,
+                        "bot_trigger_mmr": t.bot_trigger_mmr
                     })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -1096,7 +1103,7 @@ else:
                     "promotion_points", "promotion_points_low", "promotion_points_high",
                     "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
                     "capacity", "placement_min_mmr", "placement_max_mmr", 
-                    "bot_match_enabled", "bot_trigger_goal_diff", "bot_trigger_loss_streak"
+                    "bot_match_enabled", "bot_trigger_goal_diff", "bot_trigger_loss_streak", "bot_trigger_mmr"
                 ])
 
             try:
@@ -1127,7 +1134,8 @@ else:
                         "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=0.1, format="%.1f"),
                         "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치"),
                         "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)"),
-                        "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)")
+                        "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)"),
+                        "bot_trigger_mmr": st.column_config.NumberColumn("봇 트리거 (MMR)", min_value=0, help="조건부 발동 MMR (0=미사용)")
                     }
                 )
             except Exception as e:

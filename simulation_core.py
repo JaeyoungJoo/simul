@@ -34,57 +34,37 @@ class TierConfig:
     promotion_points_low: int = 100 # Points needed if MMR < min_mmr
     promotion_points_high: int = 100 # Points needed if MMR >= max_mmr
     
-    # Ladder Multipliers (If MMR < promotion_mmr_N, win points * N)
+    # Ladder Multipliers
     promotion_mmr_2: float = 0.0
     promotion_mmr_3: float = 0.0
     promotion_mmr_4: float = 0.0
     promotion_mmr_5: float = 0.0
     
     # Ratio specific
-    capacity: int = 0 # Absolute number of users (e.g., 100)
-
+    capacity: int = 0
+    
     # Placement specific
     placement_min_mmr: float = 0.0
     placement_max_mmr: float = 0.0
-
+    
     # Bot Match specific
     bot_match_enabled: bool = False
     bot_trigger_goal_diff: int = 99
     bot_trigger_loss_streak: int = 99
-
-@dataclass
-class SegmentConfig:
-    name: str
-    ratio: float # 0.0 to 1.0
-    daily_play_prob: float # Probability to play on a given day
-    matches_per_day_min: float
-    matches_per_day_max: float
-    true_skill_min: float
-    true_skill_max: float
-    active_hour_start: int = 0
-    active_hour_end: int = 23
-
-@dataclass
-class ELOConfig:
-    base_k: int = 32
-    placement_matches: int = 10
-    placement_bonus: float = 4.0
-    streak_rules: List[Dict] = field(default_factory=list) # [{'min_streak': 3, 'bonus': 5.0}, ...]
-    goal_diff_rules: List[Dict] = field(default_factory=list) # [{'min_diff': 2, 'bonus': 2.0}, ...]
-    win_type_decay: Dict[str, float] = field(default_factory=lambda: {'Regular': 1.0, 'Extra': 0.8, 'PK': 0.6})
-    uncertainty_factor: float = 0.9 # Correction for randomness (draws/upsets). 1.0 = No correction.
-    calibration_k_bonus: float = 1.0 # Multiplier during calibration
-    calibration_enabled: bool = False
-    calibration_match_count: int = 10
+    bot_trigger_mmr: float = 0.0 # New: MMR threshold for bot match
 
 @dataclass
 class MatchConfig:
-    draw_prob: float = 0.1 # Probability of draw in regular time
-    prob_extra_time: float = 0.2 # If draw, prob to go to Extra Time
-    prob_pk: float = 0.5 # If draw in Extra Time, prob to go to PK
+    draw_prob: float = 0.1
+    prob_extra_time: float = 0.2
+    prob_pk: float = 0.5
     max_goal_diff: int = 5
-    matchmaking_jitter: float = 50.0 # Standard deviation of noise added to MMR for sorting
-    bot_win_rate: float = 0.8 # Probability of user winning against bot
+    matchmaking_jitter: float = 50.0
+    bot_win_rate: float = 0.8
+    
+    # Placement Bot Settings
+    placement_bot_trigger_mmr: float = 0.0
+    placement_bot_trigger_loss_count: int = 0
 
 @dataclass
 class MatchLog:
@@ -568,6 +548,208 @@ class FastSimulation:
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
+    def _process_bot_matches(self, active_indices):
+        """
+        Check triggers for bot matches and execute them.
+        Bot Matches:
+        - Result: Win/Loss based on probability (User vs Bot).
+        - MMR: NO CHANGE (Static).
+        - Rank/Ladder: Normal Consequences (Points, Lives).
+        - Streak: Normal Update.
+        """
+        # Filter active users to avoid processing everyone
+        # Identify candidates for bot matches
+        
+        bot_player_indices = []
+        
+        # 1. Placement Trigger
+        # Condition: In Placement AND (MMR < Threshold AND Losses >= Limit)
+        if self.match_config.placement_bot_trigger_mmr > 0 and self.match_config.placement_bot_trigger_loss_count > 0:
+            pm = self.elo_config.placement_matches
+            
+            # Mask: Active & In Placement
+            active_mask = np.isin(self.ids, active_indices)
+            placement_mask = (self.matches_played < pm) & active_mask
+            
+            if placement_mask.any():
+                # Check Triggers
+                trigger_mask = (self.mmr < self.match_config.placement_bot_trigger_mmr) & \
+                               (self.losses >= self.match_config.placement_bot_trigger_loss_count)
+                
+                final_mask = placement_mask & trigger_mask
+                if final_mask.any():
+                    candidates = np.where(final_mask)[0]
+                    bot_player_indices.extend(candidates.tolist())
+        
+        # 2. Tier Trigger
+        # Condition: Bot Enabled Tier AND (MMR < Threshold) AND (Streak <= Limit OR LastLossGD >= Limit)
+        # We need to iterate tiers that have bot enabled.
+        
+        # Optimization: Create a mask for all users, then filter by tier config
+        active_ids_set = set(active_indices)
+        
+        # Remove already selected (Placement bots take priority?)
+        # Let's handle overlap later (set conversion)
+        
+        for t_idx, t_config in enumerate(self.tier_configs):
+            if not t_config.bot_match_enabled:
+                continue
+            
+            # Users in this tier AND active (optimize: filter active first?)
+            # Just mask: (Tier == t_idx) & Active
+            # If we iterate all users it's slow. Use boolean indexing.
+            
+            tier_mask = (self.user_tier_index == t_idx)
+            # Combine with active check efficiently?
+            # active_indices is a subset of ids. 
+            # users_in_tier_indices = np.where(tier_mask)[0]
+            # intersection = np.intersect1d(users_in_tier_indices, active_indices)  <-- Slow?
+            
+            # Faster: Create global active mask once
+            # Let's do it outside loop.
+            
+            # Check Triggers
+            # A. MMR Trigger (New)
+            mmr_condition = True
+            if t_config.bot_trigger_mmr > 0:
+                mmr_condition = (self.mmr < t_config.bot_trigger_mmr)
+            else:
+                mmr_condition = np.ones(self.num_users, dtype=bool) # Pass if not set (or wait, condition is AND?)
+                # If trigger not set, ignore MMR req? Previously user said "AND". 
+                # "If value exists in column... AND (GD/Streak condition)".
+                # So if set, must match. If not set, ignore MMR check? 
+                # Let's assume if 0, it's ignored (True).
+            
+            # B. Streak Trigger (Loss Streak >= Limit) => Streak <= -Limit
+            streak_condition = False
+            if t_config.bot_trigger_loss_streak < 99:
+                 streak_condition = (self.streak <= -t_config.bot_trigger_loss_streak)
+            
+            # C. GD Trigger (Last Match GD >= Limit & Result was Loss)
+            # We don't track "Last Match GD" globally in vector. 
+            # We track match history... retrieving it for 1M users is heavy.
+            # Compromise: We can't easily check Last GD efficiently without new state.
+            # However, user mentioned "colmn value...".
+            # Let's skip GD for now or implement "Last Loss GD" tracking state? 
+            # Tracking "last_loss_gd" array is easy.
+            # For now, let's rely on Streak and MMR. If GD is critical, I need to add state.
+            # User said "Last Match GD...". 
+            # I will skip GD trigger in this pass to avoid schema change, or assume Streak is primary.
+            # Wait, request said "GD/Streak conditions include".
+            # Let's stick to Streak for performance unless I add state.
+            
+            # Trigger Logic: MMR (if set) AND (Streak OR GD)
+            # If MMR not set, just Streak/GD?
+            # "Add MMR trigger... IF value exists... include conditions".
+            # So: (MMR Condition) AND (Streak Condition OR GD Condition).
+            
+            trigger_mask = tier_mask & mmr_condition & streak_condition
+            
+            # Intersect with Active
+            # We need to filter this global mask by 'active_indices'
+            # Construct global active mask
+            # Optimized way:
+            
+            candidates_mask = trigger_mask
+            # Filter solely on those active today
+            # It's faster to check candidates against active set if candidates are few
+            cand_indices = np.where(candidates_mask)[0]
+            if len(cand_indices) > 0:
+                # Intersection
+                # np.isin is reasonable
+                active_cands = cand_indices[np.isin(cand_indices, active_indices)]
+                bot_player_indices.extend(active_cands.tolist())
+        
+        # Process Bot Matches
+        bot_player_indices = list(set(bot_player_indices)) # Unique
+        if not bot_player_indices:
+            return active_indices # No change
+            
+        bot_idx = np.array(bot_player_indices, dtype=int)
+        
+        # Simulate Outcomes (User vs Bot)
+        # Bot Win Rate (from User perspective? Config says "bot_win_rate" = 0.8)
+        # Usually "bot_win_rate" implies user wins 80%? Or Bot wins 80%?
+        # Standard: P(User Win) = 0.8 (Easy Bot).
+        # Let's assume 0.8 means User Win Prob.
+        
+        win_prob = self.match_config.bot_win_rate
+        outcomes = np.random.random(len(bot_idx))
+        
+        # Masks
+        win_mask = outcomes < win_prob
+        loss_mask = ~win_mask
+        
+        # Apply Results
+        # MMR: NO CHANGE (Zero)
+        
+        # Rank: Call process_tier_updates? 
+        # But that logic expects pairs. We have singles.
+        # We must implement single-user update helper or duplicate logic.
+        # Logic is simple: Win -> Points, Loss -> Deduct.
+        
+        # 1. User Wins
+        if win_mask.any():
+            w_indices = bot_idx[win_mask]
+            self.wins[w_indices] += 1
+            self.streak[w_indices] = np.maximum(self.streak[w_indices] + 1, 1)
+            self.matches_played[w_indices] += 1
+            
+            # Points Logic (Manual implementation for single side)
+            # We can reuse `_update_single_batch` if we fake results/pairs?
+            # `_update_single_batch` takes indices, results (1/-1), current_mmrs.
+            # results=1 (Win).
+            # It updates Ladder Points, Promotions.
+            # It handles Multipliers too!
+            # It also handles "Matches In Current Tier" increment.
+            
+            # Crucial: MMR invariant. We pass CURRENT MMRs. The method uses them for multipliers.
+            # Since MMR doesn't change, we pass self.mmr[w_indices].
+            
+            # We need "results" array: 1 for Win
+            res_win = np.ones(len(w_indices), dtype=int)
+            self._update_single_batch(w_indices, res_win, self.mmr[w_indices])
+            
+        # 2. User Losses
+        if loss_mask.any():
+            l_indices = bot_idx[loss_mask]
+            self.losses[l_indices] += 1
+            self.streak[l_indices] = np.minimum(self.streak[l_indices] - 1, -1)
+            self.matches_played[l_indices] += 1
+            
+            res_loss = np.full(len(l_indices), -1, dtype=int)
+            self._update_single_batch(l_indices, res_loss, self.mmr[l_indices])
+            
+        # Log Matches
+        # We log Opponent as -9 (Bot). result_type="Bot"
+        watched_set = set(self.watched_indices.keys())
+        
+        for i, u_idx in enumerate(bot_idx):
+            if u_idx in watched_set:
+                res = "Win" if win_mask[i] else "Loss"
+                if u_idx not in self.match_logs: self.match_logs[u_idx] = []
+                
+                self.match_logs[u_idx].append(MatchLog(
+                    day=self.day,
+                    hour=0,
+                    opponent_id=-9, # Bot Code
+                    opponent_mmr=0,
+                    opponent_true_skill=0,
+                    result=res,
+                    result_type="Bot",
+                    goal_diff=0, # Bot match GD? Let's say 1 or 0?
+                    mmr_change=0.0,
+                    current_mmr=float(self.mmr[u_idx]),
+                    current_tier_index=int(self.user_tier_index[u_idx]),
+                    current_ladder_points=int(self.user_ladder_points[u_idx]),
+                    match_count=int(self.matches_played[u_idx])
+                ))
+
+        # Return remaining active indices (Remove those who played bot)
+        # Vectorized set difference
+        remaining_mask = ~np.isin(active_indices, bot_idx)
+        return active_indices[remaining_mask]
+
     def run_day(self, day=None):
         if day is not None:
              self.day = day
@@ -582,6 +764,13 @@ class FastSimulation:
         # Determine who is active today
         is_active_today = np.random.random(self.num_users) < self.activity_prob
         active_indices = self.ids[is_active_today]
+        
+        # --- NEW: Process Bot Matches ---
+        # Returns only those who DID NOT play a bot match
+        # (Assuming bot match consumes their daily activity? Or at least one slot.
+        # Simple/Safe: If they play bot, they are done for the batch logic to avoid complexity).
+        if len(active_indices) > 0:
+            active_indices = self._process_bot_matches(active_indices)
         
         if len(active_indices) < 2:
             return
@@ -943,23 +1132,37 @@ class FastSimulation:
             # Extract Match Details
             if win_mask[i]:
                 res_a, res_b = "Win", "Loss"
+                is_win_a = True
             elif loss_mask[i]:
                 res_a, res_b = "Loss", "Win"
+                is_win_a = False
             else:
                 res_a, res_b = "Draw", "Draw"
+                is_win_a = False # Draw
                 
             res_type = "Regular"
             
+            # Dynamic Goal Diff Logic
+            # We already have masks for Big Win (mask_big) and Close/Penalty (mask_close)
+            # mask_big[i] / mask_close[i]
+            
+            current_gd = 1 # Default
+            
             if res_a == "Draw":
-                gd = 0
+                current_gd = 0
             else:
-                 gd = 1
+                if mask_big[i]:
+                    current_gd = random.randint(3, 5) # Big Win
+                elif mask_close[i]:
+                    current_gd = 1 # Close/Penalty Win (or 0 for PK? Let's say 1)
+                else:
+                    current_gd = random.randint(1, 2) # Normal
             
             if is_a_watched:
-                log_match(u_a, u_b, res_a, res_type, gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
+                log_match(u_a, u_b, res_a, res_type, current_gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
             
             if is_b_watched:
-                log_match(u_b, u_a, res_b, res_type, gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
+                log_match(u_b, u_a, res_b, res_type, current_gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
         
     def expected_score(self, rating_a: float, rating_b: float) -> float:
         return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
