@@ -263,6 +263,8 @@ def save_config(current_username=None):
         "max_goal_diff": st.session_state.get("max_goal_diff", 5),
         "matchmaking_jitter": st.session_state.get("matchmaking_jitter", 50.0),
         "bot_win_rate": st.session_state.get("bot_win_rate", 0.8),
+        "placement_bot_trigger_mmr": st.session_state.get("placement_bot_trigger_mmr", 0.0),
+        "placement_bot_trigger_loss_count": st.session_state.get("placement_bot_trigger_loss_count", 0),
         # ELO Config
         "base_k": st.session_state.get("base_k", 32),
         "placement_matches": st.session_state.get("placement_matches", 10),
@@ -309,7 +311,8 @@ def save_config(current_username=None):
                 "loss_point_correction": getattr(t, "loss_point_correction", 1.0),
                 "bot_match_enabled": getattr(t, "bot_match_enabled", False),
                 "bot_trigger_goal_diff": getattr(t, "bot_trigger_goal_diff", 99),
-                "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99)
+                "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99),
+                "bot_trigger_mmr": getattr(t, "bot_trigger_mmr", 0.0)
             } for t in st.session_state.get("tier_config", [])
         ],
         # Segments (Serialize)
