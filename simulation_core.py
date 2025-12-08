@@ -1222,8 +1222,8 @@ class FastSimulation:
         
         self.draws[idx_a[draw_mask]] += 1
         self.draws[idx_b[draw_mask]] += 1
-        self.streak[idx_a[draw_mask]] = 0 # Reset streak on draw
-        self.streak[idx_b[draw_mask]] = 0
+        # self.streak[idx_a[draw_mask]] = 0 # Streak persists through draws (User Request)
+        # self.streak[idx_b[draw_mask]] = 0
         
         # --- Track First 3 Outcomes (Analysis) ---
         # Current match count is already incremented (so 1, 2, 3...)
