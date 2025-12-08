@@ -606,6 +606,151 @@ class FastSimulation:
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
+    def _update_single_batch(self, indices, results, current_mmrs):
+        """
+        Handle tier updates for a batch of single users (e.g. Bot matches).
+        results: 1 (Win), 0 (Draw), -1 (Loss)
+        """
+        for t_idx, config in enumerate(self.tier_configs):
+            # Mask for users in this tier within the batch
+            tier_mask = self.user_tier_index[indices] == t_idx
+            
+            if not tier_mask.any():
+                continue
+                
+            subset_indices = indices[tier_mask]
+            subset_results = results[tier_mask]
+            subset_mmrs = current_mmrs[tier_mask]
+            
+            # --- Ladder Points Logic ---
+            if config.type == TierType.LADDER:
+                # Wins
+                win_mask = subset_results == 1
+                if win_mask.any():
+                    win_indices = subset_indices[win_mask]
+                    points = np.full(len(win_indices), config.points_win)
+                    
+                    # Multipliers based on MMR
+                    mults = np.ones(len(win_indices), dtype=int)
+                    win_mmrs = subset_mmrs[win_mask]
+                    
+                    if config.promotion_mmr_2 > 0: mults[win_mmrs >= config.promotion_mmr_2] = 2
+                    if config.promotion_mmr_3 > 0: mults[win_mmrs >= config.promotion_mmr_3] = 3
+                    if config.promotion_mmr_4 > 0: mults[win_mmrs >= config.promotion_mmr_4] = 4
+                    if config.promotion_mmr_5 > 0: mults[win_mmrs >= config.promotion_mmr_5] = 5
+                    
+                    points = (points * mults).astype(int)
+                    self.user_ladder_points[win_indices] += points
+                    # Increment matches in current tier tracking
+                    self.matches_in_current_tier[win_indices] += 1
+
+                # Draws
+                draw_mask = subset_results == 0
+                if draw_mask.any():
+                    self.user_ladder_points[subset_indices[draw_mask]] += config.points_draw
+                    self.matches_in_current_tier[subset_indices[draw_mask]] += 1
+                
+                # Losses
+                loss_mask = subset_results == -1
+                if loss_mask.any():
+                    loss_indices = subset_indices[loss_mask]
+                    if config.points_loss > 0:
+                        self.user_ladder_points[loss_indices] -= config.points_loss
+                        self.user_ladder_points[loss_indices] = np.maximum(self.user_ladder_points[loss_indices], 0)
+                    self.matches_in_current_tier[loss_indices] += 1
+
+            # --- Promotion Logic ---
+            prom_indices = []
+            
+            if config.type == TierType.ELO:
+                # ELO Promotion
+                prom_mask = subset_mmrs >= config.max_mmr
+                if prom_mask.any():
+                    candidates = subset_indices[prom_mask]
+                    if t_idx < len(self.tier_configs) - 1:
+                        next_tier = self.tier_configs[t_idx+1]
+                        if next_tier.type == TierType.RATIO:
+                            # Capacity Check
+                            next_tier_users = np.where(self.user_tier_index == t_idx + 1)[0]
+                            remaining = next_tier.capacity - len(next_tier_users)
+                            if remaining > 0:
+                                cand_mmrs = self.mmr[candidates]
+                                sorted_idx = np.argsort(cand_mmrs)[::-1]
+                                can_promote_count = min(len(candidates), remaining)
+                                prom_indices = candidates[sorted_idx][:can_promote_count]
+                            else:
+                                prom_indices = []
+                        else:
+                            prom_indices = candidates
+            else:
+                 # Ladder/MMR Promotion
+                target_points = np.full(len(subset_indices), config.promotion_points)
+                low_mask = subset_mmrs < config.min_mmr
+                target_points[low_mask] = config.promotion_points_low
+                high_mask = subset_mmrs >= config.max_mmr
+                target_points[high_mask] = config.promotion_points_high
+                
+                prom_mask = self.user_ladder_points[subset_indices] >= target_points
+                
+                if prom_mask.any():
+                    candidates = subset_indices[prom_mask]
+                    prom_indices = candidates
+                    if t_idx < len(self.tier_configs) - 1:
+                        next_tier = self.tier_configs[t_idx+1]
+                        if next_tier.type == TierType.RATIO:
+                            next_tier_users = np.where(self.user_tier_index == t_idx + 1)[0]
+                            remaining = next_tier.capacity - len(next_tier_users)
+                            if remaining > 0:
+                                cand_mmrs = self.mmr[candidates]
+                                sorted_idx = np.argsort(cand_mmrs)[::-1]
+                                can_promote_count = min(len(candidates), remaining)
+                                prom_indices = candidates[sorted_idx][:can_promote_count]
+                            else:
+                                prom_indices = []
+                        else:
+                            # Direct Promotion for Ladder
+                            prom_indices = candidates
+
+            # Execute Promotion
+            if len(prom_indices) > 0 and t_idx < len(self.tier_configs) - 1:
+                current_durations = self.matches_in_current_tier[prom_indices]
+                self.promotion_durations[config.name].extend(current_durations.tolist())
+                self.matches_in_current_tier[prom_indices] = 0
+                self.user_tier_index[prom_indices] += 1
+                self.user_ladder_points[prom_indices] = 0
+                new_tier = self.tier_configs[t_idx+1]
+                self.user_demotion_lives[prom_indices] = new_tier.demotion_lives
+                self.promotion_counts[t_idx+1] = self.promotion_counts.get(t_idx+1, 0) + len(prom_indices)
+
+            # --- Demotion Logic (Skip for Bot Match Wins, Apply for Losses) ---
+            loss_mask = subset_results == -1
+            if loss_mask.any():
+                 loss_indices = subset_indices[loss_mask]
+                 # Filter promoted
+                 if len(prom_indices) > 0:
+                      loss_indices = np.setdiff1d(loss_indices, prom_indices)
+                 
+                 if len(loss_indices) > 0:
+                      if config.type == TierType.LADDER or config.demotion_lives > 0:
+                           zero_points_mask = self.user_ladder_points[loss_indices] == 0
+                           risk_indices = loss_indices[zero_points_mask]
+                           
+                           if len(risk_indices) > 0 and config.demotion_mmr > 0:
+                                risk_vals = self.mmr[risk_indices]
+                                risk_indices = risk_indices[risk_vals < config.demotion_mmr]
+                           
+                           if len(risk_indices) > 0:
+                                self.user_demotion_lives[risk_indices] -= 1
+                                demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                                if demote_mask.any() and t_idx > 0:
+                                     dem_indices = risk_indices[demote_mask]
+                                     self.user_tier_index[dem_indices] -= 1
+                                     self.user_ladder_points[dem_indices] = 0
+                                     self.matches_in_current_tier[dem_indices] = 0
+                                     lower_tier = self.tier_configs[t_idx-1]
+                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
+                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+
     def _process_bot_matches(self, active_indices):
         """
         Check triggers for bot matches and execute them.
@@ -667,41 +812,26 @@ class FastSimulation:
             # Let's do it outside loop.
             
             # Check Triggers
-            # A. MMR Trigger (New)
-            mmr_condition = True
+            # Check Triggers
+            # Initialize conditions (Default False = Not Triggered)
+            mmr_condition = False
             if t_config.bot_trigger_mmr > 0:
                 mmr_condition = (self.mmr < t_config.bot_trigger_mmr)
-            else:
-                mmr_condition = np.ones(self.num_users, dtype=bool) # Pass if not set (or wait, condition is AND?)
-                # If trigger not set, ignore MMR req? Previously user said "AND". 
-                # "If value exists in column... AND (GD/Streak condition)".
-                # So if set, must match. If not set, ignore MMR check? 
-                # Let's assume if 0, it's ignored (True).
             
-            # B. Streak Trigger (Loss Streak >= Limit) => Streak <= -Limit
             streak_condition = False
             if t_config.bot_trigger_loss_streak < 99:
                  streak_condition = (self.streak <= -t_config.bot_trigger_loss_streak)
             
-            # C. GD Trigger (Last Match GD >= Limit & Result was Loss)
-            # We don't track "Last Match GD" globally in vector. 
-            # We track match history... retrieving it for 1M users is heavy.
-            # Compromise: We can't easily check Last GD efficiently without new state.
-            # However, user mentioned "colmn value...".
-            # Let's skip GD for now or implement "Last Loss GD" tracking state? 
-            # Tracking "last_loss_gd" array is easy.
-            # For now, let's rely on Streak and MMR. If GD is critical, I need to add state.
-            # User said "Last Match GD...". 
-            # I will skip GD trigger in this pass to avoid schema change, or assume Streak is primary.
-            # Wait, request said "GD/Streak conditions include".
-            # Let's stick to Streak for performance unless I add state.
+            # Combine Conditions (OR Logic: Trigger if ANY condition is met)
+            # Tier Mask is AND (Must be in tier)
+            # (MMR OR Streak)
             
-            # Trigger Logic: MMR (if set) AND (Streak OR GD)
-            # If MMR not set, just Streak/GD?
-            # "Add MMR trigger... IF value exists... include conditions".
-            # So: (MMR Condition) AND (Streak Condition OR GD Condition).
-            
-            trigger_mask = tier_mask & mmr_condition & streak_condition
+            # Optimization: If both False, skip
+            if (mmr_condition is False) and (streak_condition is False):
+                trigger_mask = False
+            else:
+                 # Ensure numpy broadcasting
+                 trigger_mask = tier_mask & (mmr_condition | streak_condition)
             
             # Intersect with Active
             # We need to filter this global mask by 'active_indices'
