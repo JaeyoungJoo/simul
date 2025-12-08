@@ -813,25 +813,40 @@ class FastSimulation:
             
             # Check Triggers
             # Check Triggers
-            # Initialize conditions (Default False = Not Triggered)
-            mmr_condition = False
-            if t_config.bot_trigger_mmr > 0:
-                mmr_condition = (self.mmr < t_config.bot_trigger_mmr)
+            # Smart AND Logic:
+            # - If specific trigger is SET, it MUST be satisfied.
+            # - If specific trigger is NOT SET, it is ignored (True).
+            # - If NO triggers are set, then NO match (False).
             
-            streak_condition = False
-            if t_config.bot_trigger_loss_streak < 99:
-                 streak_condition = (self.streak <= -t_config.bot_trigger_loss_streak)
+            has_mmr_trigger = t_config.bot_trigger_mmr > 0
+            has_streak_trigger = t_config.bot_trigger_loss_streak < 99
             
-            # Combine Conditions (OR Logic: Trigger if ANY condition is met)
-            # Tier Mask is AND (Must be in tier)
-            # (MMR OR Streak)
-            
-            # Optimization: If both False, skip
-            if (mmr_condition is False) and (streak_condition is False):
+            if not has_mmr_trigger and not has_streak_trigger:
+                # No triggers defined? Disable bot match for this tier implicitly
                 trigger_mask = False
             else:
-                 # Ensure numpy broadcasting
-                 trigger_mask = tier_mask & (mmr_condition | streak_condition)
+                 # Initialize passthroughs
+                 mmr_condition = True
+                 streak_condition = True
+                 
+                 if has_mmr_trigger:
+                     mmr_condition = (self.mmr < t_config.bot_trigger_mmr)
+                 
+                 if has_streak_trigger:
+                      streak_condition = (self.streak <= -t_config.bot_trigger_loss_streak)
+                 
+                 # Combine with AND
+                 # Matches only if ALL defined conditions are met
+                 if (mmr_condition is True) and (streak_condition is True):
+                     # Should not happen given check above, but safe fallback
+                     trigger_mask = True # Everyone? No, we shouldn't reach here if both false.
+                     # If both True (passthrough), it means nothing set? Checks above cover that.
+                     # Wait, if has_mmr=T, has_streak=F -> mmr_cond=Array, streak_cond=True.
+                     # Array & True = Array. Correct.
+                     pass 
+                 
+                 # Apply
+                 trigger_mask = tier_mask & mmr_condition & streak_condition
             
             # Intersect with Active
             # We need to filter this global mask by 'active_indices'
