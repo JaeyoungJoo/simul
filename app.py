@@ -2337,6 +2337,112 @@ else:
             except Exception as e:
                 st.error(f"MMR 적정성 분석 중 오류 발생: {e}")
 
+            st.divider()
+            st.markdown("#### 티어별 승/무/패 비율 평균 (Avg Win/Draw/Loss Ratios)")
+            st.caption("각 티어에 속한 유저들의 평균 승률, 무승부율, 패배율")
+            
+            try:
+                if hasattr(sim, 'tier_configs') and hasattr(sim, 'user_tier_index') and hasattr(sim, 'wins') and hasattr(sim, 'losses') and hasattr(sim, 'draws') and hasattr(sim, 'matches_played'):
+                    
+                    ratio_data = []
+                    
+                    current_tiers = np.array(sim.user_tier_index)
+                    u_wins = np.array(sim.wins)
+                    u_losses = np.array(sim.losses)
+                    u_draws = np.array(sim.draws)
+                    u_matches = np.array(sim.matches_played)
+                    
+                    for i, t_config in enumerate(sim.tier_configs):
+                        t_name = t_config.name
+                        
+                        # Filter users in this tier
+                        mask = current_tiers == i
+                        if np.any(mask):
+                            # Filter users who have played at least 1 match to avoid div by zero
+                            # (Though sim usually ensures this, let's be safe)
+                            
+                            sub_matches = u_matches[mask]
+                            valid_play_mask = sub_matches > 0
+                            
+                            if np.any(valid_play_mask):
+                                # Apply second mask
+                                final_mask = np.zeros_like(mask)
+                                # indices of 'mask' where 'valid_play_mask' is true
+                                # This is tricky with double masking.
+                                # Let's extract subarray first.
+                                
+                                s_wins = u_wins[mask][valid_play_mask]
+                                s_losses = u_losses[mask][valid_play_mask]
+                                s_draws = u_draws[mask][valid_play_mask]
+                                s_matches = sub_matches[valid_play_mask]
+                                
+                                # Calculate individual rates
+                                r_wins = s_wins / s_matches
+                                r_losses = s_losses / s_matches
+                                r_draws = s_draws / s_matches
+                                
+                                # Average of rates
+                                avg_win = np.mean(r_wins)
+                                avg_loss = np.mean(r_losses)
+                                avg_draw = np.mean(r_draws)
+                                
+                                ratio_data.append({
+                                    "Tier": t_name,
+                                    "Win Rate": avg_win,
+                                    "Draw Rate": avg_draw,
+                                    "Loss Rate": avg_loss,
+                                    "Count": len(s_matches)
+                                })
+                            else:
+                                ratio_data.append({"Tier": t_name, "Win Rate": 0, "Draw Rate": 0, "Loss Rate": 0, "Count": 0})
+                        else:
+                            ratio_data.append({"Tier": t_name, "Win Rate": 0, "Draw Rate": 0, "Loss Rate": 0, "Count": 0})
+                    
+                    if ratio_data:
+                        df_ratio = pd.DataFrame(ratio_data)
+                        
+                        # Stacked Bar Chart
+                        fig_ratio = go.Figure()
+                        
+                        fig_ratio.add_trace(go.Bar(
+                            x=df_ratio["Tier"], y=df_ratio["Win Rate"], name='Win (승)',
+                            marker_color='blue'
+                        ))
+                        fig_ratio.add_trace(go.Bar(
+                            x=df_ratio["Tier"], y=df_ratio["Draw Rate"], name='Draw (무)',
+                            marker_color='gray'
+                        ))
+                        fig_ratio.add_trace(go.Bar(
+                            x=df_ratio["Tier"], y=df_ratio["Loss Rate"], name='Loss (패)',
+                            marker_color='red'
+                        ))
+                        
+                        fig_ratio.update_layout(
+                            barmode='stack',
+                            title="티어별 평균 승/무/패 비율",
+                            xaxis_title="Tier",
+                            yaxis_title="Ratio (0.0 - 1.0)",
+                            hovermode="x unified",
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig_ratio, width="stretch")
+                        
+                        with st.expander("승/무/패 상세 데이터 (Detailed Data)"):
+                            # Format as percentage for display
+                            display_ratio = df_ratio.copy()
+                            display_ratio["Win %"] = display_ratio["Win Rate"].apply(lambda x: f"{x*100:.1f}%")
+                            display_ratio["Draw %"] = display_ratio["Draw Rate"].apply(lambda x: f"{x*100:.1f}%")
+                            display_ratio["Loss %"] = display_ratio["Loss Rate"].apply(lambda x: f"{x*100:.1f}%")
+                            
+                            st.dataframe(display_ratio[["Tier", "Count", "Win %", "Draw %", "Loss %"]])
+                            
+                else:
+                    st.info("비율 분석을 위한 데이터가 충분하지 않습니다.")
+                    
+            except Exception as e:
+                st.error(f"비율 분석 중 오류 발생: {e}")
+
     # --- Comments Section ---
     st.divider()
     st.subheader("Comment")
