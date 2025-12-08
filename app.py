@@ -1152,7 +1152,7 @@ else:
                 "승점 2배 MMR": "promotion_mmr_2", "승점 3배 MMR": "promotion_mmr_3", 
                 "승점 4배 MMR": "promotion_mmr_4", "승점 5배 MMR": "promotion_mmr_5",
                 "정원 (Ratio)": "capacity", "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
-                "봇 매치": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak",
+                "봇 매치": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak", "봇 트리거 (MMR)": "bot_trigger_mmr",
                 # English mappings
                 "name": "name", "type": "type", "min_mmr": "min_mmr", "max_mmr": "max_mmr",
                 "demotion_mmr": "demotion_mmr", "demotion_lives": "demotion_lives", "loss_point_correction": "loss_point_correction",
@@ -1162,7 +1162,7 @@ else:
                 "promotion_mmr_2": "promotion_mmr_2", "promotion_mmr_3": "promotion_mmr_3",
                 "promotion_mmr_4": "promotion_mmr_4", "promotion_mmr_5": "promotion_mmr_5",
                 "capacity": "capacity", "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
-                "bot_match_enabled": "bot_match_enabled", "bot_trigger_goal_diff": "bot_trigger_goal_diff", "bot_trigger_loss_streak": "bot_trigger_loss_streak"
+                "bot_match_enabled": "bot_match_enabled", "bot_trigger_goal_diff": "bot_trigger_goal_diff", "bot_trigger_loss_streak": "bot_trigger_loss_streak", "bot_trigger_mmr": "bot_trigger_mmr"
             }
             new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
             if new_tier_df is not None:
@@ -1192,7 +1192,8 @@ else:
                             placement_max_mmr=float(row.get("placement_max_mmr", 0)),
                             bot_match_enabled=bool(row.get("bot_match_enabled", False)),
                             bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
-                            bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
+                            bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99)),
+                            bot_trigger_mmr=float(row.get("bot_trigger_mmr", 0.0))
                         ))
                     st.session_state.tier_config = bulk_tiers
                     st.rerun()
