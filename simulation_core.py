@@ -110,6 +110,67 @@ class User:
             return 0.0
         return self.wins / self.matches_played
 
+@dataclass
+class SegmentConfig:
+    name: str
+    ratio: float
+    daily_play_prob: float
+    matches_per_day_min: float
+    matches_per_day_max: float
+    true_skill_min: float
+    true_skill_max: float
+    active_hour_start: int
+    active_hour_end: int
+
+@dataclass
+class ELOConfig:
+    base_k: float = 30.0
+    streak_bonus: float = 1.0
+    streak_threshold: int = 3
+    gd_bonus_weight: float = 1.0
+    mmr_compression_correction: float = 0.0
+    placement_matches: int = 10
+    placement_bonus: float = 4.0
+    streak_rules: List[Dict] = field(default_factory=list)
+    goal_diff_rules: List[Dict] = field(default_factory=list)
+    decay_et: float = 0.8
+    decay_pk: float = 0.6
+    calibration_enabled: bool = False
+    calibration_k_bonus: float = 2.0
+    calibration_match_count: int = 10
+
+class ELOSystem:
+    def __init__(self, config: ELOConfig):
+        self.config = config
+
+    def expected_score(self, rating_a, rating_b):
+        return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+
+    def calculate_new_ratings(self, user_a, user_b, actual_score_a, goal_diff, result_type, is_cal_a, is_cal_b):
+        # Basic ELO implementation for legacy support
+        k_a = self.config.base_k
+        k_b = self.config.base_k
+        
+        # Calibration Bonus
+        if is_cal_a: k_a *= self.config.calibration_k_bonus
+        if is_cal_b: k_b *= self.config.calibration_k_bonus
+        
+        expected_a = self.expected_score(user_a.current_mmr, user_b.current_mmr)
+        expected_b = self.expected_score(user_b.current_mmr, user_a.current_mmr)
+        
+        # Decay logic
+        decay = 1.0
+        if result_type == "Extra": decay = self.config.decay_et
+        elif result_type == "PK": decay = self.config.decay_pk
+        
+        # Goal Diff Bonus (Simplified)
+        gd_mult = 1.0 + (max(0, goal_diff - 1) * 0.1 * self.config.gd_bonus_weight)
+        
+        new_rating_a = user_a.current_mmr + k_a * (actual_score_a - expected_a) * decay * gd_mult
+        new_rating_b = user_b.current_mmr + k_b * ((1 - actual_score_a) - expected_b) * decay * gd_mult
+        
+        return new_rating_a, new_rating_b
+
 class FastSimulation:
     def __init__(self, num_users, segment_configs: List['SegmentConfig'], elo_config: 'ELOConfig', match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None):
         self.num_users = num_users
