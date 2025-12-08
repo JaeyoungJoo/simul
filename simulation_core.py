@@ -111,7 +111,7 @@ class User:
         return self.wins / self.matches_played
 
 class FastSimulation:
-    def __init__(self, num_users, segment_configs: List[SegmentConfig], elo_config: ELOConfig, match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None):
+    def __init__(self, num_users, segment_configs: List['SegmentConfig'], elo_config: 'ELOConfig', match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None):
         self.num_users = num_users
         self.segment_configs = segment_configs
         self.elo_config = elo_config
@@ -1311,8 +1311,8 @@ class FastSimulation:
         ))
 
 class Simulation:
-    def __init__(self, num_users: int, segment_configs: List[SegmentConfig], 
-                 elo_config: ELOConfig, match_config: MatchConfig, initial_mmr: float = 1000.0):
+    def __init__(self, num_users: int, segment_configs: List['SegmentConfig'], 
+                 elo_config: 'ELOConfig', match_config: MatchConfig, initial_mmr: float = 1000.0):
         self.num_users = num_users
         self.elo_config = elo_config
         self.match_config = match_config
