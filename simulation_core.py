@@ -544,7 +544,7 @@ class FastSimulation:
                 self.promotion_counts[t_idx+1] = self.promotion_counts.get(t_idx+1, 0) + len(prom_indices)
 
                 # Update Points (Surplus Logic)
-                if config.type in (TierType.LADDER, TierType.SEQUENCE):
+                if config.type == TierType.LADDER:
                     # Logic: New Points = Current Points - Promotion Cost
                     # Cost depends on MMR (Low/Normal/High)
                     # We must use PRE-MATCH MMR (subset_mmrs) to match the promotion trigger logic
