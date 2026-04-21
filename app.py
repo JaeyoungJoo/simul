@@ -841,7 +841,11 @@ else:
                                     bot_match_enabled=t.get("bot_match_enabled", False),
                                     bot_trigger_goal_diff=t.get("bot_trigger_goal_diff", 99),
                                     bot_trigger_loss_streak=t.get("bot_trigger_loss_streak", 99),
-                                    bot_trigger_mmr=t.get("bot_trigger_mmr", 0.0)
+                                    bot_trigger_mmr=t.get("bot_trigger_mmr", 0.0),
+                                    match_count=t.get("match_count", 0),
+                                    demotion_point=t.get("demotion_point", 0),
+                                    demotion_point_low=t.get("demotion_point_low", 0),
+                                    demotion_point_high=t.get("demotion_point_high", 0)
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
@@ -1045,7 +1049,11 @@ else:
                         loss_point_correction=float(row.get("loss_point_correction", 1.0)),
                         bot_match_enabled=bool(row.get("bot_match_enabled", False)),
                         bot_trigger_goal_diff=int(row.get("bot_trigger_goal_diff", 99)),
-                        bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99))
+                        bot_trigger_loss_streak=int(row.get("bot_trigger_loss_streak", 99)),
+                        match_count=int(row.get("match_count", 0)),
+                        demotion_point=int(row.get("demotion_point", 0)),
+                        demotion_point_low=int(row.get("demotion_point_low", 0)),
+                        demotion_point_high=int(row.get("demotion_point_high", 0))
                     ))
             except Exception as e:
                 st.warning(f"티어 CSV 로드 실패: {e}")
@@ -1093,7 +1101,11 @@ else:
                         "bot_match_enabled": t.bot_match_enabled,
                         "bot_trigger_goal_diff": t.bot_trigger_goal_diff,
                         "bot_trigger_loss_streak": t.bot_trigger_loss_streak,
-                        "bot_trigger_mmr": t.bot_trigger_mmr
+                        "bot_trigger_mmr": t.bot_trigger_mmr,
+                        "match_count": getattr(t, "match_count", 0),
+                        "demotion_point": getattr(t, "demotion_point", 0),
+                        "demotion_point_low": getattr(t, "demotion_point_low", 0),
+                        "demotion_point_high": getattr(t, "demotion_point_high", 0)
                     })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -1105,6 +1117,7 @@ else:
                     "points_win", "points_draw", "points_loss", 
                     "promotion_points", "promotion_points_low", "promotion_points_high",
                     "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
+                    "match_count", "demotion_point", "demotion_point_low", "demotion_point_high",
                     "capacity", "placement_min_mmr", "placement_max_mmr", 
                     "bot_match_enabled", "bot_trigger_goal_diff", "bot_trigger_loss_streak", "bot_trigger_mmr"
                 ])
@@ -1116,7 +1129,7 @@ else:
                     key="tier_editor",
                     column_config={
                         "name": st.column_config.TextColumn("티어 이름", required=True),
-                        "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio", "ELO"], required=True),
+                        "type": st.column_config.SelectboxColumn("타입", options=["MMR", "Ladder", "Ratio", "ELO", "Sequence"], required=True),
                         "min_mmr": st.column_config.NumberColumn("최소 MMR", step=0.1, format="%.1f", required=True),
                         "max_mmr": st.column_config.NumberColumn("최대 MMR", step=0.1, format="%.1f", required=True),
                         "demotion_mmr": st.column_config.NumberColumn("강등 위험 MMR", step=0.1, format="%.1f", help="이 MMR 미만일 때 패배 시 강등 방어 횟수 차감"),
@@ -1132,6 +1145,10 @@ else:
                         "promotion_mmr_3": st.column_config.NumberColumn("승점 3배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 3배"),
                         "promotion_mmr_4": st.column_config.NumberColumn("승점 4배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 4배"),
                         "promotion_mmr_5": st.column_config.NumberColumn("승점 5배 MMR", step=10, help="이 MMR 미만일 때 승리 시 승점 5배"),
+                        "match_count": st.column_config.NumberColumn("시퀀스 경기수", step=1, help="시퀀스 유지에 필요한 경기 횟수"),
+                        "demotion_point": st.column_config.NumberColumn("강등 기준 점수", step=10, help="시퀀스 완료 후 강등되는 잔여 포인트 기준"),
+                        "demotion_point_low": st.column_config.NumberColumn("강등 기준 (Low MMR)", step=10, help="낮은 MMR 유저를 위한 강등 기준 점수"),
+                        "demotion_point_high": st.column_config.NumberColumn("강등 기준 (High MMR)", step=10, help="높은 MMR 유저를 위한 강등 기준 점수"),
                         "capacity": st.column_config.NumberColumn("정원 (Ratio)", step=1),
                         "placement_min_mmr": st.column_config.NumberColumn("배치 최소 MMR", step=0.1, format="%.1f"),
                         "placement_max_mmr": st.column_config.NumberColumn("배치 최대 MMR", step=0.1, format="%.1f"),
@@ -1154,6 +1171,8 @@ else:
                 "승급 포인트 (Low MMR)": "promotion_points_low", "승급 포인트 (High MMR)": "promotion_points_high",
                 "승점 2배 MMR": "promotion_mmr_2", "승점 3배 MMR": "promotion_mmr_3", 
                 "승점 4배 MMR": "promotion_mmr_4", "승점 5배 MMR": "promotion_mmr_5",
+                "시퀀스 경기수": "match_count", "강등 기준 점수": "demotion_point",
+                "강등 기준 (Low MMR)": "demotion_point_low", "강등 기준 (High MMR)": "demotion_point_high",
                 "정원 (Ratio)": "capacity", "배치 최소 MMR": "placement_min_mmr", "배치 최대 MMR": "placement_max_mmr",
                 "봇 매치": "bot_match_enabled", "봇 트리거 (골득실)": "bot_trigger_goal_diff", "봇 트리거 (연패)": "bot_trigger_loss_streak", "봇 트리거 (MMR)": "bot_trigger_mmr",
                 # English mappings
@@ -1164,12 +1183,28 @@ else:
                 "promotion_points_low": "promotion_points_low", "promotion_points_high": "promotion_points_high",
                 "promotion_mmr_2": "promotion_mmr_2", "promotion_mmr_3": "promotion_mmr_3",
                 "promotion_mmr_4": "promotion_mmr_4", "promotion_mmr_5": "promotion_mmr_5",
+                "match_count": "match_count", "demotion_point": "demotion_point", "demotion_point_low": "demotion_point_low", "demotion_point_high": "demotion_point_high",
                 "capacity": "capacity", "placement_min_mmr": "placement_min_mmr", "placement_max_mmr": "placement_max_mmr",
                 "bot_match_enabled": "bot_match_enabled", "bot_trigger_goal_diff": "bot_trigger_goal_diff", "bot_trigger_loss_streak": "bot_trigger_loss_streak", "bot_trigger_mmr": "bot_trigger_mmr"
             }
             new_tier_df = render_bulk_csv_uploader("티어 설정", df_tiers, "tier", tier_map)
             if new_tier_df is not None:
                 try:
+                    # Robustness: Coerce numeric columns to numbers, treating errors as 0
+                    numeric_cols = [
+                        "min_mmr", "max_mmr", "demotion_mmr", "demotion_lives", "loss_point_correction",
+                        "points_win", "points_draw", "points_loss", 
+                        "promotion_points", "promotion_points_low", "promotion_points_high",
+                        "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
+                        "match_count", "demotion_point", "demotion_point_low", "demotion_point_high",
+                        "capacity", "placement_min_mmr", "placement_max_mmr", 
+                        "bot_trigger_goal_diff", "bot_trigger_loss_streak", "bot_trigger_mmr"
+                    ]
+                    
+                    for col in numeric_cols:
+                        if col in new_tier_df.columns:
+                            new_tier_df[col] = pd.to_numeric(new_tier_df[col], errors='coerce').fillna(0)
+
                     bulk_tiers = []
                     for index, row in new_tier_df.iterrows():
                         bulk_tiers.append(safe_create_tier_config(
@@ -1190,6 +1225,10 @@ else:
                             promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
                             promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
                             promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
+                            match_count=int(row.get("match_count", 0)),
+                            demotion_point=int(row.get("demotion_point", 0)),
+                            demotion_point_low=int(row.get("demotion_point_low", 0)),
+                            demotion_point_high=int(row.get("demotion_point_high", 0)),
                             capacity=int(row.get("capacity", 0)),
                             placement_min_mmr=float(row.get("placement_min_mmr", 0)),
                             placement_max_mmr=float(row.get("placement_max_mmr", 0)),
@@ -1227,6 +1266,10 @@ else:
                                 promotion_mmr_3=float(row.get("promotion_mmr_3", 0)),
                                 promotion_mmr_4=float(row.get("promotion_mmr_4", 0)),
                                 promotion_mmr_5=float(row.get("promotion_mmr_5", 0)),
+                                match_count=int(row.get("match_count", 0)),
+                                demotion_point=int(row.get("demotion_point", 0)),
+                                demotion_point_low=int(row.get("demotion_point_low", 0)),
+                                demotion_point_high=int(row.get("demotion_point_high", 0)),
                                 capacity=int(row["capacity"]),
                                 placement_min_mmr=float(row.get("placement_min_mmr", 0)),
                                 placement_max_mmr=float(row.get("placement_max_mmr", 0)),

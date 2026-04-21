@@ -14,6 +14,7 @@ class TierType(Enum):
     LADDER = "Ladder"
     RATIO = "Ratio"
     ELO = "ELO"
+    SEQUENCE = "Sequence"
 
 @dataclass
 class TierConfig:
@@ -39,6 +40,12 @@ class TierConfig:
     promotion_mmr_3: float = 0.0
     promotion_mmr_4: float = 0.0
     promotion_mmr_5: float = 0.0
+    
+    # Sequence specific
+    match_count: int = 0
+    demotion_point: int = 0
+    demotion_point_low: int = 0
+    demotion_point_high: int = 0
     
     # Ratio specific
     capacity: int = 0
@@ -431,7 +438,7 @@ class FastSimulation:
             subset_mmrs = current_mmrs[in_tier_mask]
             
             # --- Ladder Logic ---
-            if config.type == TierType.LADDER:
+            if config.type in (TierType.LADDER, TierType.SEQUENCE):
                 # Wins
                 win_mask = subset_results == 1
                 if win_mask.any():
@@ -493,7 +500,7 @@ class FastSimulation:
                         else:
                             prom_indices = candidates
             else:
-                # Ladder/MMR Promotion
+                # Ladder/MMR/Sequence Promotion
                 target_points = np.full(len(subset_indices), config.promotion_points)
                 low_mask = subset_mmrs < config.min_mmr
                 target_points[low_mask] = config.promotion_points_low
@@ -525,10 +532,6 @@ class FastSimulation:
             # Execute Promotion
             if len(prom_indices) > 0 and t_idx < len(self.tier_configs) - 1:
                 # Record Promotion Durations
-                # We need the name of the tier they are promoting FROM (i.e. config.name)
-                # All in this loop are in tier `t_idx` (based on snapshot)
-                # Note: We use t_idx derived name, which is consistent.
-                
                 current_durations = self.matches_in_current_tier[prom_indices]
                 self.promotion_durations[config.name].extend(current_durations.tolist())
                 
@@ -536,14 +539,44 @@ class FastSimulation:
                 self.matches_in_current_tier[prom_indices] = 0
                 
                 self.user_tier_index[prom_indices] += 1
-                self.user_ladder_points[prom_indices] = 0
                 new_tier = self.tier_configs[t_idx+1]
                 self.user_demotion_lives[prom_indices] = new_tier.demotion_lives
                 self.promotion_counts[t_idx+1] = self.promotion_counts.get(t_idx+1, 0) + len(prom_indices)
+
+                # Update Points (Surplus Logic)
+                if config.type in (TierType.LADDER, TierType.SEQUENCE):
+                    # Logic: New Points = Current Points - Promotion Cost
+                    # Cost depends on MMR (Low/Normal/High)
+                    # We must use PRE-MATCH MMR (subset_mmrs) to match the promotion trigger logic
+                    
+                    # Create lookup for this batch
+                    mmr_lookup = dict(zip(subset_indices, subset_mmrs))
+                    
+                    # Calculate surplus for each promoted user
+                    for u_idx in prom_indices:
+                        u_mmr = mmr_lookup.get(u_idx, 0)
+                        
+                        # Determine Cost (Same logic as detection)
+                        cost = config.promotion_points
+                        if u_mmr < config.min_mmr:
+                            cost = config.promotion_points_low
+                        elif u_mmr >= config.max_mmr:
+                            cost = config.promotion_points_high
+                            
+                        # Current points (already updated with match result)
+                        cur_pts = self.user_ladder_points[u_idx]
+                        surplus = max(0, cur_pts - cost)
+                        
+                        self.user_ladder_points[u_idx] = surplus
+                else:
+                    self.user_ladder_points[prom_indices] = 0
             
             # --- Demotion Logic ---
             if config.type == TierType.ELO:
-                demote_mask = subset_mmrs < config.min_mmr
+                # Use Demotion Risk MMR if configured, else Min MMR
+                threshold = config.demotion_mmr if config.demotion_mmr > 0 else config.min_mmr
+                demote_mask = subset_mmrs < threshold
+                
                 if demote_mask.any() and t_idx > 0:
                      dem_candidates = subset_indices[demote_mask]
                      # Filter out promoted
@@ -560,6 +593,72 @@ class FastSimulation:
                          self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                          self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
             
+            elif config.type == TierType.SEQUENCE:
+                # Sequence Demotion
+                # 1. Evaluate Max Possible Points
+                remain_matches = config.match_count - self.matches_in_current_tier[subset_indices]
+                max_pts = self.user_ladder_points[subset_indices] + (remain_matches * config.points_win)
+                
+                # Setup Demotion Threshold
+                dem_targets = np.full(len(subset_indices), config.demotion_point)
+                low_mask = subset_mmrs < config.min_mmr
+                dem_targets[low_mask] = config.demotion_point_low
+                high_mask = subset_mmrs >= config.max_mmr
+                dem_targets[high_mask] = config.demotion_point_high
+                
+                # Check for demotion
+                dem_mask = max_pts < dem_targets
+                
+                # Filter out those who already promoted just in case
+                if len(prom_indices) > 0:
+                     prom_set = set(prom_indices)
+                     # Apply ~isin logic
+                     not_prom_mask = np.array([i not in prom_set for i in subset_indices])
+                     dem_mask = dem_mask & not_prom_mask
+
+                if dem_mask.any():
+                     risk_indices = subset_indices[dem_mask]
+                     
+                     if config.demotion_mmr > 0:
+                         pre_mmr_lookup = dict(zip(subset_indices, subset_mmrs))
+                         pre_match_risk_vals = np.array([pre_mmr_lookup[idx] for idx in risk_indices])
+                         mmr_risk_mask = pre_match_risk_vals < config.demotion_mmr
+                         risk_indices = risk_indices[mmr_risk_mask]
+                     
+                     if len(risk_indices) > 0:
+                         # Consume a demotion life if they have any
+                         self.user_demotion_lives[risk_indices] -= 1
+                         
+                         actual_demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                         safe_indices = risk_indices[~actual_demote_mask]
+                         
+                         # Safe -> Reset Sequence but don't drop tier
+                         if len(safe_indices) > 0:
+                             self.matches_in_current_tier[safe_indices] = 0
+                             self.user_ladder_points[safe_indices] = 0
+                         
+                         if actual_demote_mask.any() and t_idx > 0:
+                             dem_indices = risk_indices[actual_demote_mask]
+                             self.user_tier_index[dem_indices] -= 1
+                             self.user_ladder_points[dem_indices] = 0
+                             self.matches_in_current_tier[dem_indices] = 0
+                             lower_tier = self.tier_configs[t_idx-1]
+                             self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
+                             self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+                
+                # 2. Check for Sequence End without Promotion or Demotion
+                end_mask = self.matches_in_current_tier[subset_indices] >= config.match_count
+                if len(prom_indices) > 0:
+                     prom_set = set(prom_indices)
+                     not_prom_mask = np.array([i not in prom_set for i in subset_indices])
+                     end_mask = end_mask & not_prom_mask
+                
+                if end_mask.any():
+                    end_indices = subset_indices[end_mask]
+                    # Reset Sequence for next round
+                    self.matches_in_current_tier[end_indices] = 0
+                    self.user_ladder_points[end_indices] = 0
+
             elif config.type == TierType.LADDER or config.demotion_lives > 0:
                 # Ladder/Lives Demotion
                 loss_mask = subset_results == -1
@@ -606,154 +705,7 @@ class FastSimulation:
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
-    def _update_single_batch(self, indices, results, current_mmrs):
-        """
-        Handle tier updates for a batch of single users (e.g. Bot matches).
-        results: 1 (Win), 0 (Draw), -1 (Loss)
-        """
-        # Snapshot current tiers to prevent "Double Promotion" in one batch
-        # If we check self.user_tier_index inside loop, a promoted user (0->1) might be picked up again in loop 1.
-        original_tiers = self.user_tier_index[indices].copy()
-        
-        for t_idx, config in enumerate(self.tier_configs):
-            # Mask for users in this tier within the batch (Using SNAPSHOT)
-            tier_mask = original_tiers == t_idx
-            
-            if not tier_mask.any():
-                continue
-                
-            subset_indices = indices[tier_mask]
-            subset_results = results[tier_mask]
-            subset_mmrs = current_mmrs[tier_mask]
-            
-            # --- Ladder Points Logic ---
-            if config.type == TierType.LADDER:
-                # Wins
-                win_mask = subset_results == 1
-                if win_mask.any():
-                    win_indices = subset_indices[win_mask]
-                    points = np.full(len(win_indices), config.points_win)
-                    
-                    # Multipliers based on MMR
-                    mults = np.ones(len(win_indices), dtype=int)
-                    win_mmrs = subset_mmrs[win_mask]
-                    
-                    if config.promotion_mmr_2 > 0: mults[win_mmrs >= config.promotion_mmr_2] = 2
-                    if config.promotion_mmr_3 > 0: mults[win_mmrs >= config.promotion_mmr_3] = 3
-                    if config.promotion_mmr_4 > 0: mults[win_mmrs >= config.promotion_mmr_4] = 4
-                    if config.promotion_mmr_5 > 0: mults[win_mmrs >= config.promotion_mmr_5] = 5
-                    
-                    points = (points * mults).astype(int)
-                    self.user_ladder_points[win_indices] += points
-                    # Increment matches in current tier tracking
-                    self.matches_in_current_tier[win_indices] += 1
 
-                # Draws
-                draw_mask = subset_results == 0
-                if draw_mask.any():
-                    self.user_ladder_points[subset_indices[draw_mask]] += config.points_draw
-                    self.matches_in_current_tier[subset_indices[draw_mask]] += 1
-                
-                # Losses
-                loss_mask = subset_results == -1
-                if loss_mask.any():
-                    loss_indices = subset_indices[loss_mask]
-                    if config.points_loss > 0:
-                        self.user_ladder_points[loss_indices] -= config.points_loss
-                        self.user_ladder_points[loss_indices] = np.maximum(self.user_ladder_points[loss_indices], 0)
-                    self.matches_in_current_tier[loss_indices] += 1
-
-            # --- Promotion Logic ---
-            prom_indices = []
-            
-            if config.type == TierType.ELO:
-                # ELO Promotion
-                prom_mask = subset_mmrs >= config.max_mmr
-                if prom_mask.any():
-                    candidates = subset_indices[prom_mask]
-                    if t_idx < len(self.tier_configs) - 1:
-                        next_tier = self.tier_configs[t_idx+1]
-                        if next_tier.type == TierType.RATIO:
-                            # Capacity Check
-                            next_tier_users = np.where(self.user_tier_index == t_idx + 1)[0]
-                            remaining = next_tier.capacity - len(next_tier_users)
-                            if remaining > 0:
-                                cand_mmrs = self.mmr[candidates]
-                                sorted_idx = np.argsort(cand_mmrs)[::-1]
-                                can_promote_count = min(len(candidates), remaining)
-                                prom_indices = candidates[sorted_idx][:can_promote_count]
-                            else:
-                                prom_indices = []
-                        else:
-                            prom_indices = candidates
-            else:
-                 # Ladder/MMR Promotion
-                target_points = np.full(len(subset_indices), config.promotion_points)
-                low_mask = subset_mmrs < config.min_mmr
-                target_points[low_mask] = config.promotion_points_low
-                high_mask = subset_mmrs >= config.max_mmr
-                target_points[high_mask] = config.promotion_points_high
-                
-                prom_mask = self.user_ladder_points[subset_indices] >= target_points
-                
-                if prom_mask.any():
-                    candidates = subset_indices[prom_mask]
-                    prom_indices = candidates
-                    if t_idx < len(self.tier_configs) - 1:
-                        next_tier = self.tier_configs[t_idx+1]
-                        if next_tier.type == TierType.RATIO:
-                            next_tier_users = np.where(self.user_tier_index == t_idx + 1)[0]
-                            remaining = next_tier.capacity - len(next_tier_users)
-                            if remaining > 0:
-                                cand_mmrs = self.mmr[candidates]
-                                sorted_idx = np.argsort(cand_mmrs)[::-1]
-                                can_promote_count = min(len(candidates), remaining)
-                                prom_indices = candidates[sorted_idx][:can_promote_count]
-                            else:
-                                prom_indices = []
-                        else:
-                            # Direct Promotion for Ladder
-                            prom_indices = candidates
-
-            # Execute Promotion
-            if len(prom_indices) > 0 and t_idx < len(self.tier_configs) - 1:
-                current_durations = self.matches_in_current_tier[prom_indices]
-                self.promotion_durations[config.name].extend(current_durations.tolist())
-                self.matches_in_current_tier[prom_indices] = 0
-                self.user_tier_index[prom_indices] += 1
-                self.user_ladder_points[prom_indices] = 0
-                new_tier = self.tier_configs[t_idx+1]
-                self.user_demotion_lives[prom_indices] = new_tier.demotion_lives
-                self.promotion_counts[t_idx+1] = self.promotion_counts.get(t_idx+1, 0) + len(prom_indices)
-
-            # --- Demotion Logic (Skip for Bot Match Wins, Apply for Losses) ---
-            loss_mask = subset_results == -1
-            if loss_mask.any():
-                 loss_indices = subset_indices[loss_mask]
-                 # Filter promoted
-                 if len(prom_indices) > 0:
-                      loss_indices = np.setdiff1d(loss_indices, prom_indices)
-                 
-                 if len(loss_indices) > 0:
-                      if config.type == TierType.LADDER or config.demotion_lives > 0:
-                           zero_points_mask = self.user_ladder_points[loss_indices] == 0
-                           risk_indices = loss_indices[zero_points_mask]
-                           
-                           if len(risk_indices) > 0 and config.demotion_mmr > 0:
-                                risk_vals = self.mmr[risk_indices]
-                                risk_indices = risk_indices[risk_vals < config.demotion_mmr]
-                           
-                           if len(risk_indices) > 0:
-                                self.user_demotion_lives[risk_indices] -= 1
-                                demote_mask = self.user_demotion_lives[risk_indices] <= 0
-                                if demote_mask.any() and t_idx > 0:
-                                     dem_indices = risk_indices[demote_mask]
-                                     self.user_tier_index[dem_indices] -= 1
-                                     self.user_ladder_points[dem_indices] = 0
-                                     self.matches_in_current_tier[dem_indices] = 0
-                                     lower_tier = self.tier_configs[t_idx-1]
-                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
-                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
 
     def _process_bot_matches(self, active_indices):
         """
