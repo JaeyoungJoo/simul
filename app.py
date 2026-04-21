@@ -32,6 +32,14 @@ def safe_create_tier_config(**kwargs):
             setattr(t, k, v)
         return t
 
+def parse_tier_type(val):
+    val_str = str(val).strip().lower()
+    if val_str == "ladder": return TierType.LADDER
+    if val_str == "ratio": return TierType.RATIO
+    if val_str == "elo": return TierType.ELO
+    if val_str in ("sequence", "시퀀스"): return TierType.SEQUENCE
+    return TierType.MMR
+
 def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None, use_expander=True):
     container = None
     if use_expander:
@@ -1021,12 +1029,7 @@ else:
                 for _, row in df_tier.iterrows():
                     # Handle TierType enum conversion
                     t_type_str = row["type"]
-                    t_type = TierType.MMR # Default
-                    if t_type_str == "Ladder": t_type = TierType.LADDER
-                    elif t_type_str == "Ratio": t_type = TierType.RATIO
-                    elif t_type_str == "MMR": t_type = TierType.MMR
-                    elif t_type_str == "ELO": t_type = TierType.ELO
-                    elif t_type_str == "Sequence": t_type = TierType.SEQUENCE
+                    t_type = parse_tier_type(t_type_str)
                     
                     loaded_tiers.append(TierConfig(
                         name=str(row["name"]),
@@ -1211,7 +1214,7 @@ else:
                     for index, row in new_tier_df.iterrows():
                         bulk_tiers.append(safe_create_tier_config(
                             name=str(row["name"]),
-                            type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]), # Handle string or enum
+                            type=parse_tier_type(row["type"]),
                             min_mmr=float(row.get("min_mmr", 0)),
                             max_mmr=float(row.get("max_mmr", 9999)),
                             demotion_mmr=float(row.get("demotion_mmr", 0)),
@@ -1252,7 +1255,7 @@ else:
                         try:
                             t = safe_create_tier_config(
                                 name=str(row["name"]),
-                                type=TierType(row["type"]) if isinstance(row["type"], str) else TierType(row["type"]),
+                                type=parse_tier_type(row["type"]),
                                 min_mmr=float(row["min_mmr"]),
                                 max_mmr=float(row["max_mmr"]),
                                 demotion_mmr=float(row.get("demotion_mmr", 0)),
