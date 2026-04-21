@@ -617,7 +617,9 @@ class FastSimulation:
                 self.user_sequence_entry_mmr[prom_indices] = self.mmr[prom_indices]
 
                 # Update Points (Surplus Logic)
-                if config.type == TierType.LADDER:
+                if new_tier.type == TierType.SEQUENCE:
+                    self.user_ladder_points[prom_indices] = 0
+                elif config.type == TierType.LADDER:
                     # Logic: New Points = Current Points - Promotion Cost
                     # Cost depends on MMR (Low/Normal/High)
                     # We must use PRE-MATCH MMR (subset_mmrs) to match the promotion trigger logic
