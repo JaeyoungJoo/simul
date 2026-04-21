@@ -1050,7 +1050,10 @@ class FastSimulation:
                 expansion_step = max(1.0, getattr(self.match_config, 'mmr_expansion_step', 25.0))
                 bucket_indices = np.floor((current_mmrs + jitter) / expansion_step) # Add jitter to prevent static boundary artifacts
                 tier_indices = self.user_tier_index[current_active_indices]
-                sorted_active_idx = np.lexsort((jitter, tier_indices, bucket_indices))
+                # Use a random tiebreaker inside the bucket to ensure proper Elo mixing
+                # (If we use `jitter`, it mathematically guarantees MMR matching with 0 difference)
+                random_tiebreaker = np.random.rand(len(current_active_indices))
+                sorted_active_idx = np.lexsort((random_tiebreaker, tier_indices, bucket_indices))
             else:
                 sorted_active_idx = np.argsort(current_mmrs + jitter)
                 
