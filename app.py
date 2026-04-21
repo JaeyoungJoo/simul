@@ -320,7 +320,11 @@ def save_config(current_username=None):
                 "bot_match_enabled": getattr(t, "bot_match_enabled", False),
                 "bot_trigger_goal_diff": getattr(t, "bot_trigger_goal_diff", 99),
                 "bot_trigger_loss_streak": getattr(t, "bot_trigger_loss_streak", 99),
-                "bot_trigger_mmr": getattr(t, "bot_trigger_mmr", 0.0)
+                "bot_trigger_mmr": getattr(t, "bot_trigger_mmr", 0.0),
+                "match_count": getattr(t, "match_count", 0),
+                "demotion_point": getattr(t, "demotion_point", 0),
+                "demotion_point_low": getattr(t, "demotion_point_low", 0),
+                "demotion_point_high": getattr(t, "demotion_point_high", 0)
             } for t in st.session_state.get("tier_config", [])
         ],
         # Segments (Serialize)

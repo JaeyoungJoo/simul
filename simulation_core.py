@@ -593,7 +593,7 @@ class FastSimulation:
                          self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                          self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
             
-            elif config.type == TierType.SEQUENCE:
+            elif config.type == TierType.SEQUENCE and config.match_count > 0:
                 # Sequence Demotion
                 # 1. Evaluate Max Possible Points
                 remain_matches = config.match_count - self.matches_in_current_tier[subset_indices]
@@ -629,7 +629,7 @@ class FastSimulation:
                          # Consume a demotion life if they have any
                          self.user_demotion_lives[risk_indices] -= 1
                          
-                         actual_demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                         actual_demote_mask = self.user_demotion_lives[risk_indices] < 0
                          safe_indices = risk_indices[~actual_demote_mask]
                          
                          # Safe -> Reset Sequence but don't drop tier
@@ -696,7 +696,7 @@ class FastSimulation:
                             if len(risk_indices) > 0:
                                 self.user_demotion_lives[risk_indices] -= 1
                                 
-                                demote_mask = self.user_demotion_lives[risk_indices] <= 0
+                                demote_mask = self.user_demotion_lives[risk_indices] < 0
                                 if demote_mask.any() and t_idx > 0:
                                     dem_indices = risk_indices[demote_mask]
                                     self.user_tier_index[dem_indices] -= 1
