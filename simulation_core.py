@@ -81,6 +81,7 @@ class MatchLog:
     opponent_id: int
     opponent_mmr: float
     opponent_true_skill: float
+    opponent_tier_index: int = -1
     result: str # 'Win', 'Loss', 'Draw'
     result_type: str # 'Regular', 'Extra', 'PK'
     goal_diff: int
@@ -1328,6 +1329,7 @@ class FastSimulation:
             
             opp_mmr = self.mmr[opp_idx]
             opp_ts = self.true_skill[opp_idx]
+            opp_tier = self.user_tier_index[opp_idx]
             
             self.match_logs[u_idx].append(MatchLog(
                 day=self.day,
@@ -1335,6 +1337,7 @@ class FastSimulation:
                 opponent_id=int(self.ids[opp_idx]),
                 opponent_mmr=float(opp_mmr),
                 opponent_true_skill=float(opp_ts),
+                opponent_tier_index=int(opp_tier),
                 result=res,
                 result_type=res_type,
                 goal_diff=int(gd),

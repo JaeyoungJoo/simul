@@ -1836,6 +1836,16 @@ else:
                                 else:
                                     tier_str = "-"
                             
+                            # Determine Opponent Tier String using Historical State
+                            opp_t_idx = getattr(log, 'opponent_tier_index', -1)
+                            if opp_t_idx == -1:
+                                opp_tier_str = "Unranked (배치)"
+                            else:
+                                if sim.tier_configs and 0 <= opp_t_idx < len(sim.tier_configs):
+                                    opp_tier_str = sim.tier_configs[opp_t_idx].name
+                                else:
+                                    opp_tier_str = "-"
+                            
                             all_logs_data.append({
                                 "User ID": target_idx,
                                 "Segment": seg_name,
@@ -1843,6 +1853,7 @@ else:
                                 "True Skill": f"{current_ts:.1f}",
                                 "Day": log.day,
                                 "Opponent ID": log.opponent_id,
+                                "Opponent Tier": opp_tier_str,
                                 "Opponent MMR": f"{log.opponent_mmr:.1f}",
                                 "Opponent True Skill": f"{log.opponent_true_skill:.1f}",
                                 "Result": f"{log.result} ({log.result_type})",
@@ -1856,7 +1867,7 @@ else:
                     if all_logs_data:
                         df_logs = pd.DataFrame(all_logs_data)
                         # Reorder columns
-                        cols = ["User ID", "Segment", "Current MMR", "True Skill", "Day", "Result", "Change", "New MMR", "Tier", "Opponent MMR", "Goal Diff"]
+                        cols = ["User ID", "Segment", "Current MMR", "True Skill", "Day", "Result", "Change", "New MMR", "Tier", "Opponent ID", "Opponent Tier", "Opponent MMR", "Goal Diff"]
                         # Add remaining columns
                         cols += [c for c in df_logs.columns if c not in cols]
                         df_logs = df_logs[cols]
