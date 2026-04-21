@@ -73,6 +73,11 @@ class MatchConfig:
     # Placement Bot Settings
     placement_bot_trigger_mmr: float = 0.0
     placement_bot_trigger_loss_count: int = 0
+    
+    # Advanced Matchmaking
+    use_tier_priority_matchmaking: bool = False
+    mmr_expansion_step: float = 25.0
+    expansion_time_step: int = 5
 
 @dataclass
 class MatchLog:
@@ -90,6 +95,7 @@ class MatchLog:
     current_tier_index: int = 0
     current_ladder_points: int = 0
     match_count: int = 0
+    wait_time_seconds: int = 0
 
 @dataclass
 class User:
@@ -1033,10 +1039,19 @@ class FastSimulation:
             
             # --- Perform One Batch of Matches ---
             
-            # 2. Matchmaking (Vectorized Jittered Sort)
+            # 2. Matchmaking (Vectorized Jittered Sort or Grid Bucket Sort)
             current_mmrs = self.mmr[current_active_indices]
             jitter = np.random.normal(0, self.match_config.matchmaking_jitter, len(current_active_indices))
-            sorted_active_idx = np.argsort(current_mmrs + jitter)
+            
+            if getattr(self.match_config, 'use_tier_priority_matchmaking', False):
+                # Grid Bucket Sort (O(N log N) queue simulation)
+                expansion_step = max(1.0, getattr(self.match_config, 'mmr_expansion_step', 25.0))
+                bucket_indices = np.floor((current_mmrs + jitter) / expansion_step) # Add jitter to prevent static boundary artifacts
+                tier_indices = self.user_tier_index[current_active_indices]
+                sorted_active_idx = np.lexsort((jitter, tier_indices, bucket_indices))
+            else:
+                sorted_active_idx = np.argsort(current_mmrs + jitter)
+                
             sorted_indices = current_active_indices[sorted_active_idx]
             
             # Pair adjacent
@@ -1046,8 +1061,19 @@ class FastSimulation:
             idx_a = sorted_indices[0 : n_pairs*2 : 2]
             idx_b = sorted_indices[1 : n_pairs*2 : 2]
             
+            # Calculate Wait Times
+            if getattr(self.match_config, 'use_tier_priority_matchmaking', False):
+                expansion_step = max(1.0, getattr(self.match_config, 'mmr_expansion_step', 25.0))
+                time_step = getattr(self.match_config, 'expansion_time_step', 5)
+                mmr_diffs = np.abs(self.mmr[idx_a] - self.mmr[idx_b])
+                bucket_diffs = np.floor(mmr_diffs / expansion_step).astype(int)
+                wait_times = (bucket_diffs * time_step) + time_step
+                wait_times = np.minimum(wait_times, 600) # Cap at 10 minutes realistically
+            else:
+                wait_times = np.zeros(n_pairs, dtype=int)
+            
             # 3. Simulate Outcomes & 4. Update MMR (call internal logic)
-            self._simulate_batch_matches(idx_a, idx_b)
+            self._simulate_batch_matches(idx_a, idx_b, wait_times)
             
             # Decrement matches left
             # We need to map back to the 'active_indices' array or just track locally
@@ -1106,7 +1132,7 @@ class FastSimulation:
             current_active_indices = active_indices[mask_still_playing]
             # No need to update matches_left explicitely if we use the mask against the fixed 'daily_matches' array.
             
-    def _simulate_batch_matches(self, idx_a, idx_b):
+    def _simulate_batch_matches(self, idx_a, idx_b, wait_times=None):
         n_pairs = len(idx_a)
         
         # 3. Simulate Outcomes (Vectorized)
@@ -1321,7 +1347,7 @@ class FastSimulation:
         # print(f"DEBUG: Logging Batch. Pairs {n_pairs} Watched {len(watched_set)}")
         
         # Helper to log
-        def log_match(u_idx, opp_idx, res, res_type, gd, d_mmr, cur_mmr, cur_tier, cur_pts):
+        def log_match(u_idx, opp_idx, res, res_type, gd, d_mmr, cur_mmr, cur_tier, cur_pts, wait_time):
             if u_idx not in watched_set: return
             if u_idx not in self.match_logs: self.match_logs[u_idx] = []
             
@@ -1345,7 +1371,8 @@ class FastSimulation:
                 current_mmr=float(cur_mmr),
                 current_tier_index=int(cur_tier),
                 current_ladder_points=int(cur_pts),
-                match_count=int(self.matches_played[u_idx])
+                match_count=int(self.matches_played[u_idx]),
+                wait_time_seconds=int(wait_time)
             ))
 
         for i in range(n_pairs):
@@ -1390,11 +1417,13 @@ class FastSimulation:
                 else:
                     current_gd = random.randint(1, 2) # Normal
             
+            w_time = wait_times[i] if wait_times is not None else 0
+            
             if is_a_watched:
-                log_match(u_a, u_b, res_a, res_type, current_gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a])
+                log_match(u_a, u_b, res_a, res_type, current_gd, delta_a[i], self.mmr[u_a], self.user_tier_index[u_a], self.user_ladder_points[u_a], w_time)
             
             if is_b_watched:
-                log_match(u_b, u_a, res_b, res_type, current_gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b])
+                log_match(u_b, u_a, res_b, res_type, current_gd, delta_b[i], self.mmr[u_b], self.user_tier_index[u_b], self.user_ladder_points[u_b], w_time)
         
     def expected_score(self, rating_a: float, rating_b: float) -> float:
         return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))

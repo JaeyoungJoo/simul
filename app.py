@@ -268,6 +268,9 @@ def save_config(current_username=None):
         "draw_prob": st.session_state.get("draw_prob", 0.1),
         "prob_et": st.session_state.get("prob_et", 0.2),
         "prob_pk": st.session_state.get("prob_pk", 0.5),
+        "use_tier_priority_matchmaking": st.session_state.get("use_tier_priority_matchmaking", False),
+        "mmr_expansion_step": st.session_state.get("mmr_expansion_step", 25.0),
+        "expansion_time_step": st.session_state.get("expansion_time_step", 5),
         "max_goal_diff": st.session_state.get("max_goal_diff", 5),
         "matchmaking_jitter": st.session_state.get("matchmaking_jitter", 50.0),
         "bot_win_rate": st.session_state.get("bot_win_rate", 0.8),
@@ -938,6 +941,19 @@ else:
             st.session_state.matchmaking_jitter = st.number_input("매칭 범위 (Jitter)", value=st.session_state.get("matchmaking_jitter", 50.0), help="매칭 시 MMR 검색 범위의 표준편차입니다.")
             st.session_state.bot_win_rate = st.slider("봇 매치 승률 (Bot Win Rate)", 0.0, 1.0, st.session_state.get("bot_win_rate", 0.8), help="봇 매치 시 유저가 승리할 확률입니다.")
 
+            st.divider()
+            st.caption("대기 시간 기반 매칭 및 티어 우선 매칭 설정")
+            st.session_state.use_tier_priority_matchmaking = st.checkbox(
+                "티어 우선 및 매칭 풀 확장 매칭 활성화", 
+                value=st.session_state.get("use_tier_priority_matchmaking", False), 
+                help="시뮬레이터 부하 증설 없이 대기 시간 기반 MMR 매칭 풀 확대 과정 및 티어 우선 매칭을 시뮬레이션합니다."
+            )
+            
+            if st.session_state.use_tier_priority_matchmaking:
+                st.session_state.expansion_time_step = st.number_input("조회 대기 시간 (초단위)", min_value=1, value=st.session_state.get("expansion_time_step", 5), help="매칭 단계별 소요 시간입니다.")
+                st.session_state.mmr_expansion_step = st.number_input("시간당 MMR 확장 폭", min_value=1.0, value=st.session_state.get("mmr_expansion_step", 25.0), step=5.0, help="위 대기 시간 마다 매칭 가능한 대상의 MMR 격차가 얼마나 확장되는지 설정합니다.")
+
+
             st.caption("배치고사 봇 매치 설정 (Placement Bot)")
             # Use specific keys for session state binding
             st.number_input("배치 봇 트리거 (MMR)", value=st.session_state.get("placement_bot_trigger_mmr", 0.0), help="배치 중 MMR이 이 값 미만이면 봇 매치 발동 (0=비활성)", key="placement_bot_trigger_mmr")
@@ -1505,7 +1521,10 @@ else:
                         prob_pk=st.session_state.prob_pk,
                         max_goal_diff=st.session_state.max_goal_diff,
                         matchmaking_jitter=st.session_state.matchmaking_jitter,
-                        bot_win_rate=st.session_state.bot_win_rate
+                        bot_win_rate=st.session_state.bot_win_rate,
+                        use_tier_priority_matchmaking=st.session_state.get("use_tier_priority_matchmaking", False),
+                        mmr_expansion_step=st.session_state.get("mmr_expansion_step", 25.0),
+                        expansion_time_step=st.session_state.get("expansion_time_step", 5)
                     )
                     
                     segment_configs = []
@@ -1861,13 +1880,14 @@ else:
                                 "Change": f"{log.mmr_change:+.1f}",
                                 "New MMR": f"{log.current_mmr:.1f}",
                                 "Tier": tier_str,
-                                "Ladder Points": log.current_ladder_points
+                                "Ladder Points": log.current_ladder_points,
+                                "대기 시간(초)": getattr(log, 'wait_time_seconds', 0)
                             })
                     
                     if all_logs_data:
                         df_logs = pd.DataFrame(all_logs_data)
                         # Reorder columns
-                        cols = ["User ID", "Segment", "Current MMR", "True Skill", "Day", "Result", "Change", "New MMR", "Tier", "Opponent ID", "Opponent Tier", "Opponent MMR", "Goal Diff"]
+                        cols = ["User ID", "Segment", "대기 시간(초)", "Current MMR", "True Skill", "Day", "Result", "Change", "New MMR", "Tier", "Opponent ID", "Opponent Tier", "Opponent MMR", "Goal Diff"]
                         # Add remaining columns
                         cols += [c for c in df_logs.columns if c not in cols]
                         df_logs = df_logs[cols]
