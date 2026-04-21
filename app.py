@@ -109,6 +109,19 @@ def render_bulk_csv_uploader(label, current_df, key_suffix, header_mapping=None,
 
 st.set_page_config(page_title="Rank Simulation", layout="wide")
 
+# 보안 및 UI 깔끔화를 위한 Streamlit 기본 버튼(GitHub, Deploy, 햄버거 메뉴 등) 숨김 처리
+hide_streamlit_ui = """
+<style>
+/* 우측 상단 GitHub 링크 및 Deploy 툴바 숨김 */
+[data-testid="stToolbar"] {visibility: hidden !important;}
+/* 하단 'Made with Streamlit' 푸터 숨김 */
+footer {visibility: hidden !important;}
+/* 구버전 Streamlit Cloud 뷰어 뱃지 강제 숨김 */
+.viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
+</style>
+"""
+st.markdown(hide_streamlit_ui, unsafe_allow_html=True)
+
 # --- Configuration Persistence ---
 CONFIG_FILE = "sim_config.json"
 def load_config(current_username=None):
