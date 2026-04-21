@@ -1025,6 +1025,8 @@ else:
                     if t_type_str == "Ladder": t_type = TierType.LADDER
                     elif t_type_str == "Ratio": t_type = TierType.RATIO
                     elif t_type_str == "MMR": t_type = TierType.MMR
+                    elif t_type_str == "ELO": t_type = TierType.ELO
+                    elif t_type_str == "Sequence": t_type = TierType.SEQUENCE
                     
                     loaded_tiers.append(TierConfig(
                         name=str(row["name"]),
