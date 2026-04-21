@@ -81,12 +81,12 @@ class MatchLog:
     opponent_id: int
     opponent_mmr: float
     opponent_true_skill: float
-    opponent_tier_index: int = -1
     result: str # 'Win', 'Loss', 'Draw'
     result_type: str # 'Regular', 'Extra', 'PK'
     goal_diff: int
     mmr_change: float
     current_mmr: float
+    opponent_tier_index: int = -1
     current_tier_index: int = 0
     current_ladder_points: int = 0
     match_count: int = 0
