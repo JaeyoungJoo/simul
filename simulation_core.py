@@ -46,6 +46,7 @@ class TierConfig:
     demotion_point: int = 0
     demotion_point_low: int = 0
     demotion_point_high: int = 0
+    tier_group: int = 1
     
     # Ratio specific
     capacity: int = 0
@@ -176,7 +177,7 @@ class ELOSystem:
         return new_rating_a, new_rating_b
 
 class FastSimulation:
-    def __init__(self, num_users, segment_configs: List['SegmentConfig'], elo_config: 'ELOConfig', match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None):
+    def __init__(self, num_users, segment_configs: List['SegmentConfig'], elo_config: 'ELOConfig', match_config: MatchConfig, tier_configs: List[TierConfig], initial_mmr=1200, use_true_skill_init=False, reset_rules: List[Dict]=None, ladder_tier_gap_bonus_enabled: bool=False, ladder_tier_gap_bonuses: dict=None):
         self.num_users = num_users
         self.segment_configs = segment_configs
         self.elo_config = elo_config
@@ -184,6 +185,8 @@ class FastSimulation:
         self.tier_configs = tier_configs
         self.use_true_skill_init = use_true_skill_init
         self.reset_rules = reset_rules if reset_rules else []
+        self.ladder_tier_gap_bonus_enabled = ladder_tier_gap_bonus_enabled
+        self.ladder_tier_gap_bonuses = ladder_tier_gap_bonuses if ladder_tier_gap_bonuses else {}
         self.day = 0 # Track current day
         self.seg_names = [s.name for s in segment_configs]
         self.watched_indices = {} # {idx: segment_name}
@@ -203,6 +206,7 @@ class FastSimulation:
         self.user_tier_index = np.full(num_users, -1, dtype=int) # -1 = Unranked, 0 to len(tiers)-1
         self.user_ladder_points = np.zeros(num_users, dtype=int)
         self.user_demotion_lives = np.zeros(num_users, dtype=int)
+        self.user_sequence_entry_mmr = np.full(num_users, float(initial_mmr))
         
         # Initialize Tiers (Placement or Default 0)
         # For now start everyone at lowest tier or placement
@@ -416,12 +420,49 @@ class FastSimulation:
         
         # Batch update logic helper
         # USE PRE-MATCH MMRs (Passed from snapshot) to ensure demotion fairness
-        self._update_single_batch(idx_a, res_a, pre_mmr_a)
-        self._update_single_batch(idx_b, res_b, pre_mmr_b)
+        self._update_single_batch(idx_a, res_a, pre_mmr_a, opponent_indices=idx_b)
+        self._update_single_batch(idx_b, res_b, pre_mmr_b, opponent_indices=idx_a)
 
-    def _update_single_batch(self, indices, results, current_mmrs):
+    def _update_single_batch(self, indices, results, current_mmrs, opponent_indices=None):
         # Snapshot current stats to prevent "Ladder Cascading" (promoting multiple times in one loop)
         current_tier_snapshot = self.user_tier_index[indices].copy()
+        
+        # Sequence Invalidation logic (Filter out invalid matches before match counter increments)
+        valid_mask = np.ones(len(indices), dtype=bool)
+        if opponent_indices is not None:
+            # Setup arrays for invalidation
+            for j in range(len(indices)):
+                u_idx = indices[j]
+                opp_idx = opponent_indices[j]
+                u_tier = current_tier_snapshot[j]
+                opp_tier = self.user_tier_index[opp_idx]
+                
+                # Cannot invalidate if Unranked or opponent Unranked (Wait, maybe we can, but Unranked has no tier config)
+                if u_tier == -1 or opp_tier == -1:
+                    continue
+                
+                u_config = self.tier_configs[u_tier]
+                opp_config = self.tier_configs[opp_tier]
+                
+                # Rule: Sequence type AND Lost AND opponent tier group > user tier group
+                if u_config.type == TierType.SEQUENCE and results[j] == -1:
+                    if opp_config.tier_group > u_config.tier_group:
+                        valid_mask[j] = False  # Mark as invalid!
+        
+        # Apply valid mask
+        valid_indices = np.where(valid_mask)[0]
+        invalid_indices = np.where(~valid_mask)[0]
+        
+        # We need to extract only valid records for normal processing
+        # Wait, if we just zero out their results, they still increment match count!
+        # So we should exclude them from `indices`, `results`, `current_mmrs`, `opponent_indices`.
+        if len(invalid_indices) > 0:
+            indices = indices[valid_indices]
+            results = results[valid_indices]
+            current_mmrs = current_mmrs[valid_indices]
+            current_tier_snapshot = current_tier_snapshot[valid_indices]
+            if opponent_indices is not None:
+                opponent_indices = opponent_indices[valid_indices]
         
         # Track Matches in Current Tier (Increment for all participants)
         # Note: We increment BEFORE checking promotion, so the promoting match counts towards the duration.
@@ -436,6 +477,15 @@ class FastSimulation:
             subset_indices = indices[in_tier_mask]
             subset_results = results[in_tier_mask]
             subset_mmrs = current_mmrs[in_tier_mask]
+            
+            # For Sequence evaluation, use entry MMR
+            eval_mmrs = subset_mmrs
+            if config.type == TierType.SEQUENCE:
+                eval_mmrs = self.user_sequence_entry_mmr[subset_indices]
+                
+            subset_opponents = None
+            if opponent_indices is not None:
+                subset_opponents = opponent_indices[in_tier_mask]
             
             # --- Ladder Logic ---
             if config.type in (TierType.LADDER, TierType.SEQUENCE):
@@ -460,6 +510,21 @@ class FastSimulation:
                     # Apply to base points
                     points = (points * mults).astype(int)
                     
+                    # Apply Ladder Tier Gap Bonus
+                    if config.type == TierType.LADDER and self.ladder_tier_gap_bonus_enabled and subset_opponents is not None:
+                        win_opp_indices = subset_opponents[win_mask]
+                        opp_tier_indices = self.user_tier_index[win_opp_indices]
+                        
+                        # diff = opponent tier index - my tier index
+                        for j in range(len(win_indices)):
+                            my_t_idx = t_idx
+                            opp_t_idx = opp_tier_indices[j]
+                            if opp_t_idx != -1:
+                                diff = opp_t_idx - my_t_idx
+                                bonus = self.ladder_tier_gap_bonuses.get(diff, 0)
+                                if bonus > 0:
+                                    points[j] += bonus
+
                     self.user_ladder_points[win_indices] += points
                 
                 # Draws
@@ -502,9 +567,9 @@ class FastSimulation:
             else:
                 # Ladder/MMR/Sequence Promotion
                 target_points = np.full(len(subset_indices), config.promotion_points)
-                low_mask = subset_mmrs < config.min_mmr
+                low_mask = eval_mmrs < config.min_mmr
                 target_points[low_mask] = config.promotion_points_low
-                high_mask = subset_mmrs >= config.max_mmr
+                high_mask = eval_mmrs >= config.max_mmr
                 target_points[high_mask] = config.promotion_points_high
                 
                 prom_mask = self.user_ladder_points[subset_indices] >= target_points
@@ -542,6 +607,7 @@ class FastSimulation:
                 new_tier = self.tier_configs[t_idx+1]
                 self.user_demotion_lives[prom_indices] = new_tier.demotion_lives
                 self.promotion_counts[t_idx+1] = self.promotion_counts.get(t_idx+1, 0) + len(prom_indices)
+                self.user_sequence_entry_mmr[prom_indices] = self.mmr[prom_indices]
 
                 # Update Points (Surplus Logic)
                 if config.type == TierType.LADDER:
@@ -601,9 +667,9 @@ class FastSimulation:
                 
                 # Setup Demotion Threshold
                 dem_targets = np.full(len(subset_indices), config.demotion_point)
-                low_mask = subset_mmrs < config.min_mmr
+                low_mask = eval_mmrs < config.min_mmr
                 dem_targets[low_mask] = config.demotion_point_low
-                high_mask = subset_mmrs >= config.max_mmr
+                high_mask = eval_mmrs >= config.max_mmr
                 dem_targets[high_mask] = config.demotion_point_high
                 
                 # Check for demotion
@@ -636,6 +702,7 @@ class FastSimulation:
                          if len(safe_indices) > 0:
                              self.matches_in_current_tier[safe_indices] = 0
                              self.user_ladder_points[safe_indices] = 0
+                             self.user_sequence_entry_mmr[safe_indices] = self.mmr[safe_indices]
                          
                          if actual_demote_mask.any() and t_idx > 0:
                              dem_indices = risk_indices[actual_demote_mask]
@@ -645,6 +712,7 @@ class FastSimulation:
                              lower_tier = self.tier_configs[t_idx-1]
                              self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                              self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+                             self.user_sequence_entry_mmr[dem_indices] = self.mmr[dem_indices]
                 
                 # 2. Check for Sequence End without Promotion or Demotion
                 end_mask = self.matches_in_current_tier[subset_indices] >= config.match_count
@@ -658,6 +726,7 @@ class FastSimulation:
                     # Reset Sequence for next round
                     self.matches_in_current_tier[end_indices] = 0
                     self.user_ladder_points[end_indices] = 0
+                    self.user_sequence_entry_mmr[end_indices] = self.mmr[end_indices]
 
             elif config.type == TierType.LADDER or config.demotion_lives > 0:
                 # Ladder/Lives Demotion
@@ -704,6 +773,7 @@ class FastSimulation:
                                     lower_tier = self.tier_configs[t_idx-1]
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
+                                    self.user_sequence_entry_mmr[dem_indices] = self.mmr[dem_indices]
 
 
 

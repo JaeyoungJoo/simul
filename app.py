@@ -294,6 +294,11 @@ def save_config(current_username=None):
         "gd_bonus_weight": st.session_state.get("gd_bonus_weight", 1.0),
         "streak_bonus": st.session_state.get("streak_bonus", 1.0),
         "streak_threshold": st.session_state.get("streak_threshold", 3),
+        "ladder_tier_gap_bonus_enabled": st.session_state.get("ladder_tier_gap_bonus_enabled", False),
+        "ladder_tier_gap_bonuses": st.session_state.get("ladder_tier_gap_bonuses", pd.DataFrame([
+            {"tier_diff": 1, "bonus": 1},
+            {"tier_diff": 2, "bonus": 2}
+        ])).to_dict('records') if 'ladder_tier_gap_bonuses' in st.session_state else [],
         # Tier Config (Serialize)
         "tier_config": [
             {
@@ -324,7 +329,8 @@ def save_config(current_username=None):
                 "match_count": getattr(t, "match_count", 0),
                 "demotion_point": getattr(t, "demotion_point", 0),
                 "demotion_point_low": getattr(t, "demotion_point_low", 0),
-                "demotion_point_high": getattr(t, "demotion_point_high", 0)
+                "demotion_point_high": getattr(t, "demotion_point_high", 0),
+                "tier_group": getattr(t, "tier_group", 1)
             } for t in st.session_state.get("tier_config", [])
         ],
         # Segments (Serialize)
@@ -1015,13 +1021,36 @@ else:
             st.session_state.point_convergence_rate = st.slider("랭크 포인트 수렴 속도", 0.0, 1.0, st.session_state.get("point_convergence_rate", 0.5), help="MMR 변동이 랭크 포인트에 반영되는 비율입니다. (1.0 = 즉시 반영, 0.1 = 천천히 반영)")
 
             st.subheader("MMR 압축 보정 (Calibration)")
-            st.subheader("MMR 압축 보정 (Calibration)")
             # st.session_state.calibration_enabled is now controlled in the main Control Panel
             if st.session_state.get("calibration_enabled", False):
                 st.session_state.calibration_k_bonus = st.number_input("보정 K-Bonus 배율", value=st.session_state.get("calibration_k_bonus", 2.0), help="보정 모드 시 적용할 추가 K-Factor 배율입니다.")
                 st.session_state.calibration_match_count = st.number_input("보정 적용 경기 수", value=st.session_state.get("calibration_match_count", 10), help="보정 모드가 적용되는 경기 수입니다.")
             else:
                 st.caption("제어판에서 보정 모드를 활성화하면 추가 설정이 표시됩니다.")
+
+            st.subheader("티어 격차 승급 보너스 (Ladder 전용)")
+            st.session_state.ladder_tier_gap_bonus_enabled = st.checkbox("티어 격차 보너스 적용", value=st.session_state.get("ladder_tier_gap_bonus_enabled", False), help="Ladder 상대방과의 티어 차이에 따라 승점 보너스를 부여합니다.")
+            if 'ladder_tier_gap_bonuses' not in st.session_state:
+                st.session_state.ladder_tier_gap_bonuses = pd.DataFrame([
+                    {"tier_diff": 1, "bonus": 1},
+                    {"tier_diff": 2, "bonus": 2}
+                ])
+            if not isinstance(st.session_state.ladder_tier_gap_bonuses, pd.DataFrame):
+                st.session_state.ladder_tier_gap_bonuses = pd.DataFrame(st.session_state.ladder_tier_gap_bonuses)
+            if st.session_state.ladder_tier_gap_bonuses.empty:
+                st.session_state.ladder_tier_gap_bonuses = pd.DataFrame(columns=["tier_diff", "bonus"])
+
+            try:
+                edited_gap_bonus = st.data_editor(st.session_state.ladder_tier_gap_bonuses, num_rows="dynamic", key="gap_bonus_editor", 
+                                                    column_config={
+                                                        "tier_diff": st.column_config.NumberColumn("티어 격차", step=1),
+                                                        "bonus": st.column_config.NumberColumn("추가 승급 포인트", step=1)
+                                                    })
+                if st.button("격차 보너스 적용 (Apply)"):
+                    st.session_state.ladder_tier_gap_bonuses = edited_gap_bonus
+                    st.rerun()
+            except Exception as e:
+                st.error(f"티어 격차 보너스 에디터 오류: {e}")
 
         # --- Tier Configuration ---
     if 'tier_config' not in st.session_state or not st.session_state.tier_config:
@@ -1062,7 +1091,8 @@ else:
                         match_count=int(row.get("match_count", 0)),
                         demotion_point=int(row.get("demotion_point", 0)),
                         demotion_point_low=int(row.get("demotion_point_low", 0)),
-                        demotion_point_high=int(row.get("demotion_point_high", 0))
+                        demotion_point_high=int(row.get("demotion_point_high", 0)),
+                        tier_group=int(row.get("tier_group", 1))
                     ))
             except Exception as e:
                 st.warning(f"티어 CSV 로드 실패: {e}")
@@ -1114,7 +1144,8 @@ else:
                         "match_count": getattr(t, "match_count", 0),
                         "demotion_point": getattr(t, "demotion_point", 0),
                         "demotion_point_low": getattr(t, "demotion_point_low", 0),
-                        "demotion_point_high": getattr(t, "demotion_point_high", 0)
+                        "demotion_point_high": getattr(t, "demotion_point_high", 0),
+                        "tier_group": getattr(t, "tier_group", 1)
                     })
             
             df_tiers = pd.DataFrame(tier_data)
@@ -1127,7 +1158,7 @@ else:
                     "promotion_points", "promotion_points_low", "promotion_points_high",
                     "promotion_mmr_2", "promotion_mmr_3", "promotion_mmr_4", "promotion_mmr_5",
                     "match_count", "demotion_point", "demotion_point_low", "demotion_point_high",
-                    "capacity", "placement_min_mmr", "placement_max_mmr", 
+                    "tier_group", "capacity", "placement_min_mmr", "placement_max_mmr", 
                     "bot_match_enabled", "bot_trigger_goal_diff", "bot_trigger_loss_streak", "bot_trigger_mmr"
                 ])
 
@@ -1164,7 +1195,8 @@ else:
                         "bot_match_enabled": st.column_config.CheckboxColumn("봇 매치"),
                         "bot_trigger_goal_diff": st.column_config.NumberColumn("봇 트리거 (골득실)"),
                         "bot_trigger_loss_streak": st.column_config.NumberColumn("봇 트리거 (연패)"),
-                        "bot_trigger_mmr": st.column_config.NumberColumn("봇 트리거 (MMR)", min_value=0, help="조건부 발동 MMR (0=미사용)")
+                        "bot_trigger_mmr": st.column_config.NumberColumn("봇 트리거 (MMR)", min_value=0, help="조건부 발동 MMR (0=미사용)"),
+                        "tier_group": st.column_config.NumberColumn("티어 그룹 구분", step=1, help="시퀀스 룰 무효화 평가등에 쓰이는 티어 수준 (예: 1, 2)")
                     }
                 )
             except Exception as e:
@@ -1470,13 +1502,21 @@ else:
                         bot_win_rate=st.session_state.bot_win_rate
                     )
                     
-                    # Ensure segments are objects
                     segment_configs = []
                     for s in st.session_state.segments:
                         if isinstance(s, dict):
                             segment_configs.append(SegmentConfig(**s))
                         else:
                             segment_configs.append(s)
+                    
+                    ladder_tier_gap_bonuses_dict = {}
+                    if isinstance(st.session_state.ladder_tier_gap_bonuses, pd.DataFrame):
+                        for _, row in st.session_state.ladder_tier_gap_bonuses.iterrows():
+                            if pd.notna(row['tier_diff']) and pd.notna(row['bonus']):
+                                ladder_tier_gap_bonuses_dict[int(row['tier_diff'])] = int(row['bonus'])
+                    elif isinstance(st.session_state.ladder_tier_gap_bonuses, list):
+                         for rule in st.session_state.ladder_tier_gap_bonuses:
+                             ladder_tier_gap_bonuses_dict[int(rule.get('tier_diff', 0))] = int(rule.get('bonus', 0))
 
                     # Initialize or Update Simulation
                     if hard_reset or st.session_state.simulation is None:
@@ -1488,7 +1528,9 @@ else:
                             tier_configs=st.session_state.tier_config,
                             initial_mmr=st.session_state.initial_mmr,
                             use_true_skill_init=st.session_state.get("use_true_skill_init", False),
-                            reset_rules=st.session_state.reset_rules.to_dict('records') if 'reset_rules' in st.session_state and isinstance(st.session_state.reset_rules, pd.DataFrame) else []
+                            reset_rules=st.session_state.reset_rules.to_dict('records') if 'reset_rules' in st.session_state and isinstance(st.session_state.reset_rules, pd.DataFrame) else [],
+                            ladder_tier_gap_bonus_enabled=st.session_state.get("ladder_tier_gap_bonus_enabled", False),
+                            ladder_tier_gap_bonuses=ladder_tier_gap_bonuses_dict
                         )
                         st.session_state.stats_history = []
                         st.success(f"시뮬레이션이 초기화되었습니다. (Day 0)")
@@ -1498,6 +1540,8 @@ else:
                         st.session_state.simulation.match_config = match_config
                         st.session_state.simulation.segment_configs = segment_configs
                         st.session_state.simulation.tier_configs = st.session_state.tier_config
+                        st.session_state.simulation.ladder_tier_gap_bonus_enabled = st.session_state.get("ladder_tier_gap_bonus_enabled", False)
+                        st.session_state.simulation.ladder_tier_gap_bonuses = ladder_tier_gap_bonuses_dict
                         st.success(f"시뮬레이션 설정이 업데이트되었습니다. (Day {st.session_state.simulation.day}부터 계속)")
                     
                     st.session_state.simulation.initialize_users()
