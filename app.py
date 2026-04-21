@@ -863,7 +863,8 @@ else:
                                     match_count=t.get("match_count", 0),
                                     demotion_point=t.get("demotion_point", 0),
                                     demotion_point_low=t.get("demotion_point_low", 0),
-                                    demotion_point_high=t.get("demotion_point_high", 0)
+                                    demotion_point_high=t.get("demotion_point_high", 0),
+                                    tier_group=t.get("tier_group", 1)
                                 ))
                         st.session_state.tier_config = loaded_tiers
                     except Exception as e:
