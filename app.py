@@ -2314,20 +2314,28 @@ else:
                                         durations = sim.promotion_durations.get(t_name, [])
                                         if durations:
                                             arr = np.array(durations)
+                                            p10 = np.percentile(arr, 10)
+                                            p90 = np.percentile(arr, 90)
                                             tier_stats[t_name] = {
                                                 "count": len(arr),
                                                 "mean": np.mean(arr),
+                                                "min": np.min(arr),
+                                                "top10_avg": np.mean(arr[arr <= p10]) if np.any(arr <= p10) else 0,
+                                                "bot10_avg": np.mean(arr[arr >= p90]) if np.any(arr >= p90) else 0,
                                                 "25%": np.percentile(arr, 25),
                                                 "50%": np.median(arr),
                                                 "75%": np.percentile(arr, 75)
                                             }
                                         else:
                                              tier_stats[t_name] = {
-                                                "count": 0, "mean": 0, "25%": 0, "50%": 0, "75%": 0
+                                                "count": 0, "mean": 0, "min": 0, "top10_avg": 0, "bot10_avg": 0, "25%": 0, "50%": 0, "75%": 0
                                              }
                                     
                                     # Aggregate Stats
                                     total_mean = 0
+                                    total_min = 0
+                                    total_top10_avg = 0
+                                    total_bot10_avg = 0
                                     total_25 = 0
                                     total_50 = 0
                                     total_75 = 0
@@ -2337,6 +2345,9 @@ else:
                                         stats = tier_stats.get(t_name)
                                         if stats and stats["count"] > 0:
                                             total_mean += stats["mean"]
+                                            total_min += stats["min"]
+                                            total_top10_avg += stats["top10_avg"]
+                                            total_bot10_avg += stats["bot10_avg"]
                                             total_25 += stats["25%"]
                                             total_50 += stats["50%"]
                                             total_75 += stats["75%"]
@@ -2346,11 +2357,18 @@ else:
                                         # Display Cumulative Result
                                         st.success(f"**{start_tier_sel}** 에서 **{target_tier_sel}** 까지 도달 예상 소요 매치 수")
                                         
-                                        res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-                                        res_col1.metric("Top 25% (Fast Path)", f"{total_25:.0f} Matches")
-                                        res_col2.metric("Median (Standard)", f"{total_50:.0f} Matches")
-                                        res_col3.metric("Bottom 25% (Slow Path)", f"{total_75:.0f} Matches")
-                                        res_col4.metric("Mean (Average)", f"{total_mean:.0f} Matches")
+                                        st.markdown("**🚀 Fast Path (강력한 실력대)**")
+                                        r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+                                        r1c1.metric("Fastest (Min Record)", f"{total_min:.0f} Matches")
+                                        r1c2.metric("Top 10% (Fast Avg)", f"{total_top10_avg:.0f} Matches")
+                                        r1c3.metric("Top 25% (Fast Cutoff)", f"{total_25:.0f} Matches")
+                                        r1c4.metric("Median (Standard)", f"{total_50:.0f} Matches")
+                                        
+                                        st.markdown("**🐢 Slow Path (정체 구간)**")
+                                        r2c1, r2c2, r2c3 = st.columns(3)
+                                        r2c1.metric("Bottom 25% (Slow Cutoff)", f"{total_75:.0f} Matches")
+                                        r2c2.metric("Bottom 10% (Slow Avg)", f"{total_bot10_avg:.0f} Matches")
+                                        r2c3.metric("Mean (Overall Avg)", f"{total_mean:.0f} Matches")
                                         
                                         st.caption(f"※ 포함된 티어 구간: {', '.join(intermediate_tiers)}")
                                         
@@ -2362,9 +2380,12 @@ else:
                                                 breakdown_data.append({
                                                     "Tier": t_name,
                                                     "count": s["count"],
-                                                    "matches (Fast)": s["25%"],
+                                                    "matches (Min)": s["min"],
+                                                    "matches (Top 10% Avg)": s["top10_avg"],
+                                                    "matches (Fast 25%)": s["25%"],
                                                     "matches (Median)": s["50%"],
-                                                    "matches (Slow)": s["75%"],
+                                                    "matches (Slow 75%)": s["75%"],
+                                                    "matches (Bot 10% Avg)": s["bot10_avg"],
                                                     "matches (Avg)": s["mean"]
                                                 })
                                             
