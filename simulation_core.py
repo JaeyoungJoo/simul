@@ -223,6 +223,7 @@ class FastSimulation:
             
         # Promotion Analysis (Track all users)
         self.matches_in_current_tier = np.zeros(num_users, dtype=int)
+        self.sequence_matches = np.zeros(num_users, dtype=int)
         self.promotion_durations = collections.defaultdict(list) # {TierName: [durations...]}
         
         # True Skill & Activity (for Matchmaking simulation)
@@ -330,6 +331,7 @@ class FastSimulation:
             self.user_ladder_points[i] = 0 
             self.user_demotion_lives[i] = self.tier_configs[assigned_idx].demotion_lives
             self.matches_in_current_tier[i] = 0 # Reset duration counter on placement
+            self.sequence_matches[i] = 0
             
             # Update temp count
             if self.tier_configs[assigned_idx].type == TierType.RATIO:
@@ -343,6 +345,7 @@ class FastSimulation:
         
         # Reset vectorized duration tracker globally (Season Reset)
         self.matches_in_current_tier[:] = 0
+        self.sequence_matches[:] = 0
         self.promotion_durations.clear()
         
         for rule in rules:
@@ -609,6 +612,7 @@ class FastSimulation:
                 
                 # Reset counters for promoted users
                 self.matches_in_current_tier[prom_indices] = 0
+                self.sequence_matches[prom_indices] = 0
                 
                 self.user_tier_index[prom_indices] += 1
                 new_tier = self.tier_configs[t_idx+1]
@@ -663,6 +667,7 @@ class FastSimulation:
                          self.user_ladder_points[dem_indices] = 0
                          # Reset counters for demoted users (failed attempt)
                          self.matches_in_current_tier[dem_indices] = 0
+                         self.sequence_matches[dem_indices] = 0
                          
                          lower_tier = self.tier_configs[t_idx-1]
                          self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
@@ -671,7 +676,7 @@ class FastSimulation:
             elif config.type == TierType.SEQUENCE and config.match_count > 0:
                 # Sequence Demotion
                 # 1. Evaluate Max Possible Points
-                remain_matches = config.match_count - self.matches_in_current_tier[subset_indices]
+                remain_matches = config.match_count - self.sequence_matches[subset_indices]
                 max_pts = self.user_ladder_points[subset_indices] + (remain_matches * config.points_win)
                 
                 # Setup Demotion Threshold
@@ -709,7 +714,7 @@ class FastSimulation:
                          
                          # Safe -> Reset Sequence but don't drop tier
                          if len(safe_indices) > 0:
-                             self.matches_in_current_tier[safe_indices] = 0
+                             self.sequence_matches[safe_indices] = 0
                              self.user_ladder_points[safe_indices] = 0
                              self.user_sequence_entry_mmr[safe_indices] = self.mmr[safe_indices]
                          
@@ -718,13 +723,14 @@ class FastSimulation:
                              self.user_tier_index[dem_indices] -= 1
                              self.user_ladder_points[dem_indices] = 0
                              self.matches_in_current_tier[dem_indices] = 0
+                             self.sequence_matches[dem_indices] = 0
                              lower_tier = self.tier_configs[t_idx-1]
                              self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                              self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
                              self.user_sequence_entry_mmr[dem_indices] = self.mmr[dem_indices]
                 
                 # 2. Check for Sequence End without Promotion or Demotion
-                end_mask = self.matches_in_current_tier[subset_indices] >= config.match_count
+                end_mask = self.sequence_matches[subset_indices] >= config.match_count
                 if len(prom_indices) > 0:
                      prom_set = set(prom_indices)
                      not_prom_mask = np.array([i not in prom_set for i in subset_indices])
@@ -733,7 +739,7 @@ class FastSimulation:
                 if end_mask.any():
                     end_indices = subset_indices[end_mask]
                     # Reset Sequence for next round
-                    self.matches_in_current_tier[end_indices] = 0
+                    self.sequence_matches[end_indices] = 0
                     self.user_ladder_points[end_indices] = 0
                     self.user_sequence_entry_mmr[end_indices] = self.mmr[end_indices]
 
@@ -754,16 +760,7 @@ class FastSimulation:
                         
                         if len(risk_indices) > 0:
                             # Check MMR trigger (if set)
-                            # Check MMR trigger (if set)
                             if config.demotion_mmr > 0:
-                                # Use PRE-MATCH MMR for fairness (Warning based)
-                                # subset_mmrs contains pre-match values aligned with subset_indices
-                                # Map risk_indices back to their pre-match values
-                                # Optimization: Vectorized lookup might be hard due to filtering steps.
-                                # Using simple fancy indexing on global array is wrong (it's updated).
-                                # Using dict lookup from subset_mmrs:
-                                
-                                # Setup lookup (subset size is small, ~batch size)
                                 pre_mmr_lookup = dict(zip(subset_indices, subset_mmrs))
                                 pre_match_risk_vals = np.array([pre_mmr_lookup[idx] for idx in risk_indices])
                                 
@@ -779,6 +776,8 @@ class FastSimulation:
                                     dem_indices = risk_indices[demote_mask]
                                     self.user_tier_index[dem_indices] -= 1
                                     self.user_ladder_points[dem_indices] = 0
+                                    self.matches_in_current_tier[dem_indices] = 0
+                                    self.sequence_matches[dem_indices] = 0
                                     lower_tier = self.tier_configs[t_idx-1]
                                     self.user_demotion_lives[dem_indices] = lower_tier.demotion_lives
                                     self.demotion_counts[t_idx] = self.demotion_counts.get(t_idx, 0) + len(dem_indices)
@@ -932,6 +931,8 @@ class FastSimulation:
             self.wins[w_indices] += 1
             self.streak[w_indices] = np.maximum(self.streak[w_indices] + 1, 1)
             self.matches_played[w_indices] += 1
+            self.matches_in_current_tier[w_indices] += 1
+            self.sequence_matches[w_indices] += 1
             
             # Points Logic (Manual implementation for single side)
             # We can reuse `_update_single_batch` if we fake results/pairs?
@@ -954,6 +955,8 @@ class FastSimulation:
             self.losses[l_indices] += 1
             self.streak[l_indices] = np.minimum(self.streak[l_indices] - 1, -1)
             self.matches_played[l_indices] += 1
+            self.matches_in_current_tier[l_indices] += 1
+            self.sequence_matches[l_indices] += 1
             
             res_loss = np.full(len(l_indices), -1, dtype=int)
             self._update_single_batch(l_indices, res_loss, self.mmr[l_indices])
@@ -1265,8 +1268,10 @@ class FastSimulation:
         self.mmr[idx_b] += delta_b
         
         # Stats
-        self.matches_played[idx_a] += 1
-        self.matches_played[idx_b] += 1
+        all_indices = np.concatenate([idx_a, idx_b])
+        self.matches_played[all_indices] += 1
+        self.matches_in_current_tier[all_indices] += 1
+        self.sequence_matches[all_indices] += 1
         
         self.wins[idx_a[win_mask]] += 1
         self.losses[idx_b[win_mask]] += 1
